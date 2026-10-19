@@ -368,7 +368,9 @@ main{max-width:var(--max);margin:0 auto;padding:18px 16px 70px;width:100%;flex:1
 
 @media (min-width:700px){
   :root{--fs:16px}
-  .auth{grid-template-columns:1fr 1fr;max-width:940px;margin:0 auto;gap:48px;align-content:center}
+  /* El azul lo pinta .auth, así que NO se le pone max-width: se quedaría corto y
+     por los lados asomaría el fondo claro. Se limitan las columnas y se centran. */
+  .auth{grid-template-columns:repeat(2,minmax(0,420px));justify-content:center;gap:48px;align-content:center}
   .auth .brand{padding:0}
   .me .nm{display:inline}
   h2{font-size:1.6rem}
