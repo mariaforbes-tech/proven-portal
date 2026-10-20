@@ -428,3 +428,13 @@ main{max-width:var(--max);margin:0 auto;padding:18px 16px 70px;width:100%;flex:1
 .ckrow.sel{align-items:flex-start}
 .ckrow.sel>.chip{flex:none;margin-top:2px}
 .ckrow.sel.set .tx b{color:var(--mut)}
+
+/* --- plata abierta en la lista de proyectos --- */
+.fchip.money{border-color:var(--warn);color:var(--warn);font-weight:800}
+.fchip.money.on{background:var(--warn);border-color:var(--warn);color:#fff}
+.moneybar{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 14px}
+.moneybar>div{flex:1;min-width:150px;background:var(--warnbg);color:var(--warn);border-radius:var(--r);padding:11px 14px;display:grid;gap:1px}
+.moneybar>div.out{background:var(--badbg);color:var(--bad)}
+.moneybar small{font-size:.74rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;opacity:.85}
+.moneybar b{font-size:1.35rem;letter-spacing:-.02em}
+.pcard .owed{margin-top:2px}

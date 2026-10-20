@@ -118,6 +118,9 @@
           decided_by: done ? await meId() : null }).eq('id', id));
       },
       deleteSelection: (id) => q(sb.from('selections').delete().eq('id', id)),
+      /* --- plata abierta: lo que deben y lo que se debe --- */
+      clientPayments: () => q(sb.from('client_payments').select('*')),
+      payables: () => q(sb.from('payables').select('*')),
 
       /* gastos fijos */
       fixed: () => q(sb.from('fixed_costs').select('*').order('title')),
@@ -365,6 +368,9 @@
         save();
       },
       async deleteSelection(id) { need(staff()); DB.selections = DB.selections.filter((x) => x.id !== id); save(); },
+      /* En modo de prueba no hay saldos cargados: devuelve vacío, no inventa. */
+      async clientPayments() { need(viewer()); return wait([]); },
+      async payables() { need(viewer()); return wait([]); },
 
       async fixed() { need(viewer()); return wait(DB.fixed.slice().sort((a, b) => a.title.localeCompare(b.title))); },
       async saveFixed(f) { need(finance()); if (f.id) Object.assign(DB.fixed.find((x) => x.id === f.id), f); else DB.fixed.push({ ...f, id: uid(), created_at: new Date().toISOString() }); save(); },

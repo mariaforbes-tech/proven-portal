@@ -297,9 +297,20 @@
   }
 
   let projFilter = 'active';
+  let projTouched = false;
   async function viewProjects(main) {
     if (S.projectId) return viewProject(main, S.projectId);
     const [list, allScope] = await Promise.all([API.projects(), API.allScope().catch(() => [])]);
+    /* Un proyecto terminado NO está cerrado si todavía le deben o se le debe.
+       Sin esto, Jersey City desaparecía de la lista con $2,370 por cobrar adentro. */
+    let owedIn = {}, owedOut = {};
+    if (isViewer()) {
+      const [cps, pys] = await Promise.all([API.clientPayments().catch(() => []), API.payables().catch(() => [])]);
+      cps.forEach((c) => { if (!c.paid_on) owedIn[c.project_id] = (owedIn[c.project_id] || 0) + Number(c.amount || 0); });
+      pys.forEach((y) => { const d = Number(y.amount || 0) - Number(y.paid || 0); if (d > 0) owedOut[y.project_id] = (owedOut[y.project_id] || 0) + d; });
+    }
+    const openMoney = (p) => (owedIn[p.id] || 0) + (owedOut[p.id] || 0);
+    const withMoney = list.filter((p) => openMoney(p) > 0);
     const people = isViewer() ? await API.profiles() : [];
     const pmap = {}; people.forEach((p) => { pmap[p.id] = p; });
     /* El gasto por proyecto solo lo necesita quien ve los números */
@@ -310,11 +321,23 @@
       exp.forEach((e) => { if (e.project_id) spentBy[e.project_id] = (spentBy[e.project_id] || 0) + Number(e.amount); });
       rec.forEach((m) => { spentBy[m.project_id] = (spentBy[m.project_id] || 0) + Number(m.amount || 0); });
     }
-    const filtered = list.filter((p) => projFilter === 'all' || p.status === projFilter);
-    const chips = ['active', 'paused', 'done', 'all'].map((k) => h('button', { type: 'button', class: 'fchip' + (projFilter === k ? ' on' : ''), onclick: () => { projFilter = k; refresh(); } },
-      t(k === 'all' ? 'all' : 'st_' + k), ' ', h('span', { class: 'cnt' }, k === 'all' ? list.length : list.filter((p) => p.status === k).length)));
+    /* Al entrar, si hay plata abierta esa es la lista que importa. */
+    if (projFilter === 'active' && !projTouched && withMoney.length) projFilter = 'money';
+    const filtered = projFilter === 'money' ? withMoney
+      : list.filter((p) => projFilter === 'all' || p.status === projFilter);
+    const cnt = (k) => k === 'all' ? list.length : k === 'money' ? withMoney.length : list.filter((p) => p.status === k).length;
+    const keys = ['active', 'paused', 'done', 'all'];
+    if (withMoney.length) keys.unshift('money');
+    const chips = keys.map((k) => h('button', { type: 'button', class: 'fchip' + (projFilter === k ? ' on' : '') + (k === 'money' ? ' money' : ''),
+      onclick: () => { projFilter = k; projTouched = true; refresh(); } },
+      t(k === 'all' ? 'all' : k === 'money' ? 'f_money' : 'st_' + k), ' ', h('span', { class: 'cnt' }, cnt(k))));
+    const totIn = withMoney.reduce((a, p) => a + (owedIn[p.id] || 0), 0);
+    const totOut = withMoney.reduce((a, p) => a + (owedOut[p.id] || 0), 0);
     fill(main, secH(t('tab_projects'), isStaff() ? h('button', { class: 'btn sm', type: 'button', onclick: () => projectEditor(null, people) }, ico('plus', 16), t('new_project')) : null),
       h('div', { class: 'fchips' }, chips),
+      (projFilter === 'money' && withMoney.length) ? h('div', { class: 'moneybar' },
+        totIn ? h('div', null, h('small', null, t('f_in')), h('b', null, money(totIn))) : null,
+        totOut ? h('div', { class: 'out' }, h('small', null, t('f_out')), h('b', null, money(totOut))) : null) : null,
       filtered.length ? h('div', { class: 'grid' }, filtered.map((p) => {
         const fore = p.members.find((m) => m.role === 'foreman');
         const st = scopeStats(allScope.filter((s) => s.project_id === p.id), p);
@@ -326,6 +349,9 @@
             h('b', null, t('pct_done')), st.has ? h('small', null, t('of_scope', { a: st.done, b: st.total }))
               : h('small', null, st.manual ? t('from_tracker') : t('no_scope')))),
           hl && hl.key !== 'none' && hl.key !== 'nodata' ? h('div', { class: 'row gap' }, healthChip(hl.key), h('small', { class: 'mut' }, Math.round(hl.margin * 100) + '%')) : null,
+          (owedIn[p.id] || owedOut[p.id]) ? h('div', { class: 'row gap wrap owed' },
+            owedIn[p.id] ? chip(t('f_in') + ' ' + money(owedIn[p.id]), 'warn') : null,
+            owedOut[p.id] ? chip(t('f_out') + ' ' + money(owedOut[p.id]), 'bad') : null) : null,
           p.address ? h('p', { class: 'addr' }, ico('pin', 14), p.address) : null,
           h('div', { class: 'row gap' }, chip(t('n_people', { n: p.members.length }), 'mut'), fore && pmap[fore.worker_id] ? chip(t('foreman') + ': ' + pmap[fore.worker_id].full_name.split(' ')[0], 'gold') : null));
       })) : empty(t('no_projects'), isStaff() ? t('no_projects_staff') : t('no_projects_worker')));
