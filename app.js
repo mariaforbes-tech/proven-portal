@@ -1451,6 +1451,155 @@
     return h('div', { class: 'card' }, h('h3', null, title), h('div', { class: 'fbars' }, keys.map((k) => h('div', { class: 'fbar' },
       h('span', { class: 'nm' }, k), h('span', { class: 'tr' }, h('i', { style: 'width:' + (total ? Math.max(2, (map[k] / total) * 100) : 0) + '%' })), h('b', null, money(map[k]))))));
   }
+
+  /* ---------- LO QUE ENTRA ----------
+     Finanzas mostraba solo salidas. Un depósito de $21,249.41 del cliente
+     no aparecía por ningún lado, que es medio absurdo en una pantalla
+     que se llama Finanzas. */
+  async function incomeCard(slot, a, b, pm) {
+    let cps;
+    try { cps = await API.clientPayments(); } catch (e) { return; }
+    const paid = cps.filter((x) => x.paid_on);
+    const inR = paid.filter((x) => { const d = +new Date(x.paid_on + 'T12:00:00'); return d >= +a && d < +b; })
+      .sort((x, y) => String(y.paid_on).localeCompare(String(x.paid_on)));
+    const got = inR.reduce((n, x) => n + Number(x.amount || 0), 0);
+    const owed = cps.filter((x) => !x.paid_on).reduce((n, x) => n + Number(x.amount || 0), 0);
+    const next = cps.filter((x) => !x.paid_on && x.due_on)
+      .sort((x, y) => String(x.due_on).localeCompare(String(y.due_on)))[0];
+
+    fill(slot, h('div', { class: 'card' },
+      h('h3', null, t('fin_in_h')),
+      h('div', { class: 'stats' },
+        h('div', { class: 'stat ok' }, h('span', null, t('fin_in_got')), h('b', null, money(got))),
+        h('div', { class: 'stat' + (owed ? ' warn' : '') }, h('span', null, t('f_in')), h('b', null, money(owed))),
+        next ? h('div', { class: 'stat' }, h('span', null, t('fin_in_next')), h('b', null, money(next.amount)),
+          h('small', null, (pm[next.project_id] ? pm[next.project_id].name + ' · ' : '')
+            + fDate(next.due_on + 'T12:00:00', { month: 'short', day: 'numeric' }))) : null),
+      inR.length ? h('div', { class: 'list' }, inR.map((x) => h('div', { class: 'card lrow slim' },
+        h('div', null, h('b', null, x.label + ' · ' + money(x.amount)),
+          h('small', null, [pm[x.project_id] ? pm[x.project_id].name : '',
+            fDate(x.paid_on + 'T12:00:00', { month: 'short', day: 'numeric' })].filter(Boolean).join(' · '))))))
+        : h('p', { class: 'mut small' }, t('fin_in_none'))));
+  }
+
+  /* ---------- DEUDA CON TRABAJADORES ----------
+     El punto de partida se guarda aparte: el Excel solo tiene el saldo de hoy,
+     y sin saber de dónde se arrancó no hay forma de decir cuánto se ha avanzado. */
+  async function debtCard(slot) {
+    async function draw() {
+      let rows, base;
+      try {
+        const r = await Promise.all([API.workerDebts(), API.debtBaseline()]);
+        rows = r[0]; base = (r[1] || [])[0] || { started: 0, note: '' };
+      } catch (e) { return; }
+
+      const nowOwed = rows.reduce((n, x) => n + Number(x.balance || 0), 0);
+      const started = Number(base.started || 0);
+      const closed = Math.max(0, started - nowOwed);
+      const pct = started > 0 ? Math.min(100, Math.round((closed / started) * 100)) : 0;
+      const openRows = rows.filter((x) => Number(x.balance) > 0);
+      const doneRows = rows.filter((x) => !(Number(x.balance) > 0));
+
+      function editor(x) {
+        const f = {
+          payee: h('input', { required: true, value: x.payee || '' }),
+          balance: h('input', { type: 'number', step: '0.01', min: '0', inputmode: 'decimal', required: true,
+            value: x.balance != null ? x.balance : '' }),
+          phone: h('input', { type: 'tel', value: x.phone || '' }),
+          notes: h('input', { value: x.notes || '' }),
+        };
+        const save = h('button', { class: 'btn', type: 'submit' }, t('save'));
+        const m = modal(x.id ? t('dbt_edit') : t('dbt_add'),
+          h('form', { class: 'mb frm', onsubmit: (e) => { e.preventDefault(); run(save, async () => {
+            const bal = Number(f.balance.value);
+            await API.saveWorkerDebt({ id: x.id, payee: f.payee.value.trim(), balance: bal,
+              phone: f.phone.value.trim(), notes: f.notes.value.trim(),
+              sort: x.sort != null ? x.sort : 50,
+              settled_on: bal === 0 ? (x.settled_on || dkey(new Date())) : null });
+            m.close(); toast(t('saved')); draw();
+          }); } },
+            field(t('dbt_who'), f.payee),
+            h('div', { class: 'two' }, field(t('dbt_owed') + ' ($)', f.balance), field(t('phone'), f.phone)),
+            field(t('notes'), f.notes),
+            h('div', { class: 'acts' },
+              x.id ? h('button', { class: 'btn ghost danger-t', type: 'button', onclick: async () => {
+                if (await askConfirm(t('dbt_del_q'))) { await API.deleteWorkerDebt(x.id); m.close(); draw(); }
+              } }, t('delete')) : null,
+              save)));
+      }
+
+      /* Abonar sin tener que calcular el saldo nuevo a mano. */
+      function payDown(x) {
+        const amt = h('input', { type: 'number', step: '0.01', min: '0.01', max: String(x.balance),
+          inputmode: 'decimal', required: true, value: x.balance });
+        const save = h('button', { class: 'btn', type: 'submit' }, t('dbt_pay'));
+        const left = h('p', { class: 'mut sm' }, '');
+        const show = () => { const v = Number(amt.value || 0);
+          left.textContent = t('dbt_left', { m: money(Math.max(0, Number(x.balance) - v)) }); };
+        amt.addEventListener('input', show); show();
+        const m = modal(t('dbt_pay') + ' · ' + x.payee,
+          h('form', { class: 'mb frm', onsubmit: (e) => { e.preventDefault(); run(save, async () => {
+            const v = Number(amt.value);
+            const bal = Math.max(0, Math.round((Number(x.balance) - v) * 100) / 100);
+            await API.saveWorkerDebt({ id: x.id, payee: x.payee, balance: bal,
+              phone: x.phone || '', notes: x.notes || '', sort: x.sort,
+              settled_on: bal === 0 ? dkey(new Date()) : null });
+            m.close(); toast(t('saved')); draw();
+          }); } },
+            h('p', { class: 'mut sm' }, t('dbt_owes', { m: money(x.balance) })),
+            field(t('dbt_amount'), amt), left,
+            h('div', { class: 'acts' }, save)));
+      }
+
+      function baseEditor() {
+        const f = {
+          started: h('input', { type: 'number', step: '0.01', min: '0', inputmode: 'decimal', required: true, value: started }),
+          note: h('input', { value: base.note || '' }),
+        };
+        const save = h('button', { class: 'btn', type: 'submit' }, t('save'));
+        const m = modal(t('dbt_base'), h('form', { class: 'mb frm', onsubmit: (e) => { e.preventDefault(); run(save, async () => {
+          await API.saveDebtBaseline(Number(f.started.value), f.note.value.trim());
+          m.close(); toast(t('saved')); draw();
+        }); } },
+          field(t('dbt_base'), f.started),
+          h('p', { class: 'mut sm' }, t('dbt_base_hint')),
+          field(t('notes'), f.note),
+          h('div', { class: 'acts' }, save)));
+      }
+
+      const row = (x) => {
+        const open = Number(x.balance) > 0;
+        return h('div', { class: 'card lrow slim' + (open ? '' : ' done'), key: x.id },
+          h('div', null, h('b', null, x.payee + ' · ' + money(x.balance)),
+            h('small', null, [x.phone, x.notes,
+              x.settled_on ? t('dbt_settled', { d: fDate(x.settled_on + 'T12:00:00', { month: 'short', day: 'numeric' }) }) : '']
+              .filter(Boolean).join(' · '))),
+          h('div', { class: 'row' },
+            open && isFinance() ? h('button', { class: 'btn sm', type: 'button', onclick: () => payDown(x) }, t('dbt_pay')) : null,
+            isFinance() ? h('button', { class: 'ib', type: 'button', 'aria-label': t('edit'), onclick: () => editor(x) }, ico('edit', 16)) : null));
+      };
+
+      fill(slot, h('div', { class: 'card' },
+        h('div', { class: 'row between' }, h('h3', null, t('dbt_h')),
+          isFinance() ? h('button', { class: 'lnk', type: 'button', onclick: baseEditor }, t('dbt_base_edit')) : null),
+        h('div', { class: 'stats' },
+          h('div', { class: 'stat' }, h('span', null, t('dbt_was')), h('b', null, money(started))),
+          h('div', { class: 'stat' + (nowOwed ? ' warn' : ' ok') }, h('span', null, t('dbt_now')), h('b', null, money(nowOwed)),
+            h('small', null, t('dbt_people', { n: openRows.length }))),
+          h('div', { class: 'stat ok' }, h('span', null, t('dbt_closed')), h('b', null, money(closed)))),
+        h('div', { class: 'dbar', role: 'img', 'aria-label': t('dbt_pct', { n: pct }) },
+          h('span', { style: 'width:' + pct + '%' })),
+        h('p', { class: 'mut small' }, t('dbt_pct', { n: pct })),
+        openRows.length ? h('div', { class: 'list' }, openRows.map(row)) : h('p', { class: 'mut small' }, t('dbt_none')),
+        doneRows.length ? h('details', { class: 'more' }, h('summary', null, t('dbt_done', { n: doneRows.length })),
+          h('div', { class: 'list' }, doneRows.map(row))) : null,
+        isFinance() ? h('div', { class: 'acts' }, h('button', { class: 'btn ghost sm', type: 'button',
+          onclick: () => editor({}) }, ico('plus', 16), t('dbt_add'))) : null,
+        base.note ? h('p', { class: 'mut small' }, base.note) : null));
+    }
+    draw();
+  }
+
   async function viewFinance(main) {
     const [a, b] = fRange(); const bEnd = addDays(b, -1);
     const [exp, rec, pays, projects] = await Promise.all([
@@ -1513,6 +1662,8 @@
         h('div', { class: 'trend' }, units.map((u, i) => h('span', { class: 'b' + (i === units.length - 1 ? ' hi' : ''), style: 'height:' + Math.max(2, (u.v / peak) * 100) + '%', title: money(u.v) }, h('span', null, u.label)))),
         h('p', { class: 'mut small', style: 'margin-top:22px' }, t('fin_total') + ': ' + money(units[units.length - 1].v))),
       h('div', { class: 'grid2' }, bars(t('fin_by_cat'), byCat, tot), bars(t('fin_by_vendor'), byVen, tot), bars(t('fin_by_project'), byProj, tot)),
+      h('div', { id: 'incomeslot' }),
+      h('div', { id: 'debtslot' }),
       h('div', { id: 'fixedslot' }),
       h('h3', { class: 'sub' }, t('fin_recent')),
       rows.length ? h('div', { class: 'list' }, rows.map((r) => {
@@ -1526,6 +1677,8 @@
             h('button', { class: 'ib', type: 'button', 'aria-label': t('delete'), onclick: async () => { if (await askConfirm(t('del_expense_q'))) { await API.deleteExpense(o.id); refresh(); } } }, ico('x', 16))) : null);
       })) : empty(t('no_expenses')));
     const fs = main.querySelector('#fixedslot'); if (fs) fixedCosts(fs, a, exp);
+    const inc = main.querySelector('#incomeslot'); if (inc) incomeCard(inc, a, b, pm);
+    const dbt = main.querySelector('#debtslot'); if (dbt) debtCard(dbt);
   }
 
   /* ---------- gastos fijos: lo que se paga pase lo que pase ---------- */

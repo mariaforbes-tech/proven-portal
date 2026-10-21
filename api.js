@@ -120,6 +120,17 @@
       deleteSelection: (id) => q(sb.from('selections').delete().eq('id', id)),
       /* --- plata abierta: lo que deben y lo que se debe --- */
       projectClients: () => q(sb.from('project_clients').select('*')),
+      /* --- deuda con trabajadores --- */
+      workerDebts: () => q(sb.from('worker_debts').select('*').order('sort')),
+      debtBaseline: () => q(sb.from('debt_baseline').select('*').eq('id', 1)),
+      saveWorkerDebt(r) {
+        const row = { ...r, updated_at: new Date().toISOString() };
+        if (row.id) { const id = row.id; delete row.id; return q(sb.from('worker_debts').update(row).eq('id', id)); }
+        return q(sb.from('worker_debts').insert(row));
+      },
+      deleteWorkerDebt: (id) => q(sb.from('worker_debts').delete().eq('id', id)),
+      saveDebtBaseline: (started, note) => q(sb.from('debt_baseline')
+        .upsert({ id: 1, started, note: note || '', updated_at: new Date().toISOString() })),
       clientPayments: () => q(sb.from('client_payments').select('*')),
       /* --- marcar y mover plata: cobros al cliente y lo que le debemos a terceros --- */
       saveClientPayment(r) {
@@ -276,7 +287,7 @@
       const scope = [], checks = [], materials = [], selections = [], fixed = [];
       const targets = { instagram: 4, facebook: 4, facebook_groups: 7, tiktok: 4, blog: 2, linkedin: 2, youtube: 4, yelp: 2 };
       return { session: null, targets, profiles, projects, members, messages, entries, shifts, claims: [],
-        reqs, docs, payments, expenses, posts, leads, scope, checks, materials, selections, options: [], cpays: [], pays: [], pclients: [], fixed, files: {},
+        reqs, docs, payments, expenses, posts, leads, scope, checks, materials, selections, options: [], cpays: [], pays: [], pclients: [], debts: [], base: null, fixed, files: {},
         defaults: { crew: { projects: true, clock: true, shifts: false, docs: true, pay: true }, gigs: { projects: true, clock: true, shifts: true, docs: true, pay: true } } };
     }
     let DB;
@@ -400,6 +411,16 @@
       async deleteSelection(id) { need(staff()); DB.selections = DB.selections.filter((x) => x.id !== id); save(); },
       /* En modo de prueba no hay saldos cargados: devuelve vacío, no inventa. */
       async projectClients() { need(staff()); return wait(DB.pclients || []); },
+      async workerDebts() { need(viewer()); return wait(DB.debts || []); },
+      async debtBaseline() { need(viewer()); return wait(DB.base ? [DB.base] : []); },
+      async saveWorkerDebt(r) {
+        need(finance()); DB.debts = DB.debts || [];
+        if (r.id) Object.assign(DB.debts.find((x) => x.id === r.id), r);
+        else DB.debts.push({ ...r, id: uid(), updated_at: new Date().toISOString() });
+        save();
+      },
+      async deleteWorkerDebt(id) { need(finance()); DB.debts = (DB.debts || []).filter((x) => x.id !== id); save(); },
+      async saveDebtBaseline(started, note) { need(finance()); DB.base = { id: 1, started, note: note || '' }; save(); },
       async clientPayments() { need(viewer()); return wait(DB.cpays || []); },
       async payables() { need(viewer()); return wait(DB.pays || []); },
       async saveClientPayment(r) {

@@ -454,3 +454,10 @@ main{max-width:var(--max);margin:0 auto;padding:18px 16px 70px;width:100%;flex:1
   .matrix.clients .mx.row>span:nth-child(2){justify-content:flex-start;flex-wrap:wrap;gap:5px}
 }
 .matrix.clients .mx.row>span:nth-child(2){flex-wrap:wrap;gap:5px}
+
+/* --- barra de avance de la deuda --- */
+.dbar{height:12px;border-radius:99px;background:#EFEDE6;overflow:hidden;margin:4px 0 2px}
+.dbar>span{display:block;height:100%;border-radius:99px;
+  background:linear-gradient(90deg,var(--gold) 0%,#2E7D53 100%);transition:width .4s ease}
+.card.lrow.slim.done{opacity:.6}
+details.more>summary{cursor:pointer;font-size:.86rem;color:var(--mut);font-weight:700;padding:6px 0}
