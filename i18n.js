@@ -156,7 +156,7 @@
     import_skipped: '{n} filas se omitieron porque el archivo no cuadra.',
     import_none: 'No encontramos movimientos de salida en ese archivo.', import_bad: 'No pudimos leer ese archivo. Revisa que sea el CSV del banco.',
     export_qb: 'Exportar para QuickBooks', qb_hint: 'Este archivo se sube a QuickBooks tal cual.',
-    only_out: 'Solo cuenta lo que sale (gastos y pagos). Las entradas de dinero las lleva tu contabilidad.',
+    only_out: 'Only what goes out. What comes in is above.',
     net_instagram: 'Instagram', net_facebook: 'Facebook', net_facebook_groups: 'Grupos de Facebook', net_tiktok: 'TikTok',
     net_blog: 'Nuestro blog', net_linkedin: 'LinkedIn', net_youtube: 'YouTube', net_yelp: 'Yelp',
     coverage: 'Metas de la semana', nothing_this_month: 'Sin publicar', n_posts: '{n} publicadas',
