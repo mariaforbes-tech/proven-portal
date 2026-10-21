@@ -447,3 +447,10 @@ main{max-width:var(--max);margin:0 auto;padding:18px 16px 70px;width:100%;flex:1
 .optrow .tx{flex:1;min-width:0;display:grid;gap:3px}
 .optrow .tx b{font-size:.92rem}
 .optrow .tx small{color:var(--mut);font-size:.8rem}
+
+/* --- Clientes: menos columnas que la cuadrilla, porque no tienen permisos --- */
+@media (min-width:700px){
+  .matrix.clients .mx{grid-template-columns:minmax(190px,1.6fr) minmax(170px,1.4fr) minmax(70px,.6fr) 44px}
+  .matrix.clients .mx.row>span:nth-child(2){justify-content:flex-start;flex-wrap:wrap;gap:5px}
+}
+.matrix.clients .mx.row>span:nth-child(2){flex-wrap:wrap;gap:5px}

@@ -119,7 +119,21 @@
       },
       deleteSelection: (id) => q(sb.from('selections').delete().eq('id', id)),
       /* --- plata abierta: lo que deben y lo que se debe --- */
+      projectClients: () => q(sb.from('project_clients').select('*')),
       clientPayments: () => q(sb.from('client_payments').select('*')),
+      /* --- marcar y mover plata: cobros al cliente y lo que le debemos a terceros --- */
+      saveClientPayment(r) {
+        const row = { ...r };
+        if (row.id) { const id = row.id; delete row.id; return q(sb.from('client_payments').update(row).eq('id', id)); }
+        return q(sb.from('client_payments').insert(row));
+      },
+      deleteClientPayment: (id) => q(sb.from('client_payments').delete().eq('id', id)),
+      savePayable(r) {
+        const row = { ...r };
+        if (row.id) { const id = row.id; delete row.id; return q(sb.from('payables').update(row).eq('id', id)); }
+        return q(sb.from('payables').insert(row));
+      },
+      deletePayable: (id) => q(sb.from('payables').delete().eq('id', id)),
       payables: () => q(sb.from('payables').select('*')),
       /* --- opciones que el cliente escoge --- */
       options: (selId) => q(sb.from('selection_options').select('*').eq('selection_id', selId).order('sort')),
@@ -262,7 +276,7 @@
       const scope = [], checks = [], materials = [], selections = [], fixed = [];
       const targets = { instagram: 4, facebook: 4, facebook_groups: 7, tiktok: 4, blog: 2, linkedin: 2, youtube: 4, yelp: 2 };
       return { session: null, targets, profiles, projects, members, messages, entries, shifts, claims: [],
-        reqs, docs, payments, expenses, posts, leads, scope, checks, materials, selections, options: [], fixed, files: {},
+        reqs, docs, payments, expenses, posts, leads, scope, checks, materials, selections, options: [], cpays: [], pays: [], pclients: [], fixed, files: {},
         defaults: { crew: { projects: true, clock: true, shifts: false, docs: true, pay: true }, gigs: { projects: true, clock: true, shifts: true, docs: true, pay: true } } };
     }
     let DB;
@@ -385,8 +399,23 @@
       },
       async deleteSelection(id) { need(staff()); DB.selections = DB.selections.filter((x) => x.id !== id); save(); },
       /* En modo de prueba no hay saldos cargados: devuelve vacío, no inventa. */
-      async clientPayments() { need(viewer()); return wait([]); },
-      async payables() { need(viewer()); return wait([]); },
+      async projectClients() { need(staff()); return wait(DB.pclients || []); },
+      async clientPayments() { need(viewer()); return wait(DB.cpays || []); },
+      async payables() { need(viewer()); return wait(DB.pays || []); },
+      async saveClientPayment(r) {
+        need(staff()); DB.cpays = DB.cpays || [];
+        if (r.id) Object.assign(DB.cpays.find((x) => x.id === r.id), r);
+        else DB.cpays.push({ ...r, id: uid(), created_at: new Date().toISOString() });
+        save();
+      },
+      async deleteClientPayment(id) { need(staff()); DB.cpays = (DB.cpays || []).filter((x) => x.id !== id); save(); },
+      async savePayable(r) {
+        need(staff()); DB.pays = DB.pays || [];
+        if (r.id) Object.assign(DB.pays.find((x) => x.id === r.id), r);
+        else DB.pays.push({ ...r, id: uid(), paid: r.paid || 0, created_at: new Date().toISOString() });
+        save();
+      },
+      async deletePayable(id) { need(staff()); DB.pays = (DB.pays || []).filter((x) => x.id !== id); save(); },
       async options(selId) { need(viewer()); return wait((DB.options || []).filter((o) => o.selection_id === selId).sort((a, b) => (a.sort || 0) - (b.sort || 0))); },
       async saveOption(o, file) {
         need(staff()); DB.options = DB.options || [];

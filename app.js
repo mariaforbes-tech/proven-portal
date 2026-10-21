@@ -358,7 +358,7 @@
   }
 
   function projectEditor(p, people) {
-    const approved = people.filter((x) => x.status === 'approved' && !x.is_admin);
+    const approved = people.filter((x) => x.status === 'approved' && !x.is_admin && !x.is_client);
     const cur = {}; ((p && p.members) || []).forEach((m) => { cur[m.worker_id] = m.role; });
     const f = { name: h('input', { required: true, value: p ? p.name : '' }), client: h('input', { value: p ? p.client : '' }), address: h('input', { value: p ? p.address : '', autocomplete: 'off' }),
       status: h('select', { value: p ? p.status : 'active' }, ['active', 'paused', 'done'].map((s) => h('option', { value: s }, t('st_' + s)))),
@@ -389,6 +389,153 @@
     const m = modal(p ? t('edit_project') : t('new_project'), body, { wide: true });
   }
 
+
+  /* ---------- DINERO DEL PROYECTO ----------
+     Antes esto solo se podía tocar con SQL, y por eso Barena's siguió apareciendo
+     con $1,500 por cobrar un mes después de que lo pagaran. Marcar un pago tiene
+     que ser un botón, no un favor que alguien te hace. */
+  async function moneyPane(body, p) {
+    fill(body, spin());
+
+    function payModal(row) {
+      const f = {
+        label: h('input', { required: true, value: row.label || '' }),
+        amount: h('input', { type: 'number', step: '0.01', min: '0', inputmode: 'decimal', required: true,
+          value: row.amount != null ? row.amount : '' }),
+        due_on: h('input', { type: 'date', value: row.due_on || '' }),
+        paid_on: h('input', { type: 'date', value: row.paid_on || '' }),
+      };
+      const save = h('button', { class: 'btn', type: 'submit' }, t('save'));
+      const m = modal(row.id ? t('mny_edit_in') : t('mny_add_in'),
+        h('form', { class: 'mb frm', onsubmit: (e) => { e.preventDefault(); run(save, async () => {
+          await API.saveClientPayment({
+            id: row.id, project_id: p.id,
+            label: f.label.value.trim(),
+            amount: Number(f.amount.value),
+            due_on: f.due_on.value || null,
+            paid_on: f.paid_on.value || null,
+            sort: row.sort != null ? row.sort : Date.now() % 100000,
+          });
+          m.close(); toast(t('saved')); draw();
+        }); } },
+          field(t('mny_concept'), f.label),
+          h('div', { class: 'two' }, field(t('amount') + ' ($)', f.amount), field(t('mny_paid_on'), f.paid_on)),
+          field(t('mny_due_on'), f.due_on),
+          h('p', { class: 'mut sm' }, t('mny_paid_hint')),
+          h('div', { class: 'acts' },
+            row.id ? h('button', { class: 'btn ghost danger-t', type: 'button', onclick: async () => {
+              if (await askConfirm(t('mny_del_q'))) { await API.deleteClientPayment(row.id); m.close(); draw(); }
+            } }, t('delete')) : null,
+            save)));
+    }
+
+    /* El camino corto: ya me pagaron, con qué y cuándo. Dos campos y listo. */
+    function markPaid(row) {
+      const f = {
+        label: h('input', { required: true, value: row.label || '' }),
+        paid_on: h('input', { type: 'date', required: true, value: dkey(new Date()) }),
+        how: h('input', { placeholder: t('mny_how_ph') }),
+      };
+      const save = h('button', { class: 'btn', type: 'submit' }, t('mny_mark'));
+      const m = modal(t('mny_mark') + ' · ' + money(row.amount),
+        h('form', { class: 'mb frm', onsubmit: (e) => { e.preventDefault(); run(save, async () => {
+          const how = f.how.value.trim();
+          await API.saveClientPayment({
+            id: row.id, project_id: p.id,
+            label: f.label.value.trim() + (how ? ' · ' + how : ''),
+            amount: Number(row.amount), due_on: row.due_on || null,
+            paid_on: f.paid_on.value, sort: row.sort,
+          });
+          m.close(); toast(t('saved')); draw();
+        }); } },
+          field(t('mny_concept'), f.label),
+          h('p', { class: 'mut sm' }, t('mny_concept_hint')),
+          h('div', { class: 'two' }, field(t('mny_paid_on'), f.paid_on), field(t('mny_how'), f.how)),
+          h('div', { class: 'acts' }, save)));
+    }
+
+    function owedModal(row) {
+      const f = {
+        payee: h('input', { required: true, value: row.payee || '' }),
+        amount: h('input', { type: 'number', step: '0.01', min: '0', inputmode: 'decimal', required: true,
+          value: row.amount != null ? row.amount : '' }),
+        paid: h('input', { type: 'number', step: '0.01', min: '0', inputmode: 'decimal',
+          value: row.paid != null ? row.paid : 0 }),
+        notes: h('input', { value: row.notes || '' }),
+      };
+      const save = h('button', { class: 'btn', type: 'submit' }, t('save'));
+      const m = modal(row.id ? t('mny_edit_out') : t('mny_add_out'),
+        h('form', { class: 'mb frm', onsubmit: (e) => { e.preventDefault(); run(save, async () => {
+          const amt = Number(f.amount.value), pd = Number(f.paid.value || 0);
+          await API.savePayable({
+            id: row.id, project_id: p.id, payee: f.payee.value.trim(),
+            amount: amt, paid: pd, notes: f.notes.value.trim(),
+            settled_on: pd >= amt ? (row.settled_on || dkey(new Date())) : null,
+          });
+          m.close(); toast(t('saved')); draw();
+        }); } },
+          field(t('mny_payee'), f.payee),
+          h('div', { class: 'two' }, field(t('mny_total') + ' ($)', f.amount), field(t('mny_already') + ' ($)', f.paid)),
+          field(t('notes'), f.notes),
+          h('div', { class: 'acts' },
+            row.id ? h('button', { class: 'btn ghost danger-t', type: 'button', onclick: async () => {
+              if (await askConfirm(t('mny_del_q'))) { await API.deletePayable(row.id); m.close(); draw(); }
+            } }, t('delete')) : null,
+            save)));
+    }
+
+    async function draw() {
+      let cps, pys;
+      try {
+        const r = await Promise.all([API.clientPayments(), API.payables()]);
+        cps = r[0].filter((x) => x.project_id === p.id).sort((a, b) => (a.sort || 0) - (b.sort || 0));
+        pys = r[1].filter((x) => x.project_id === p.id);
+      } catch (e) { fill(body, empty(t('err_generic'), errText(e))); return; }
+
+      const paid = cps.filter((x) => x.paid_on).reduce((a, x) => a + Number(x.amount || 0), 0);
+      const open = cps.filter((x) => !x.paid_on).reduce((a, x) => a + Number(x.amount || 0), 0);
+      const out = pys.reduce((a, x) => a + Math.max(0, Number(x.amount || 0) - Number(x.paid || 0)), 0);
+
+      const inRow = (x) => h('div', { class: 'ckrow sel' + (x.paid_on ? ' set' : '') },
+        h('div', { class: 'tx' }, h('b', null, x.label),
+          h('small', null, x.paid_on ? t('mny_on', { d: fDate(x.paid_on + 'T12:00:00', { month: 'short', day: 'numeric' }) })
+            : x.due_on ? t('mny_by', { d: fDate(x.due_on + 'T12:00:00', { month: 'short', day: 'numeric' }) })
+            : t('mny_nodate'))),
+        h('b', { class: 'amt' }, money(x.amount)),
+        x.paid_on ? chip(t('mny_in_done'), 'ok')
+          : h('button', { class: 'btn sm', type: 'button', onclick: () => markPaid(x) }, t('mny_mark')),
+        h('button', { class: 'ib', type: 'button', 'aria-label': t('edit'), onclick: () => payModal(x) }, ico('edit', 15)));
+
+      const outRow = (x) => {
+        const left = Math.max(0, Number(x.amount || 0) - Number(x.paid || 0));
+        return h('div', { class: 'ckrow sel' + (left ? '' : ' set') },
+          h('div', { class: 'tx' }, h('b', null, x.payee),
+            h('small', null, [x.notes, t('mny_of_total', { a: money(x.paid || 0), b: money(x.amount) })].filter(Boolean).join(' · '))),
+          h('b', { class: 'amt' }, money(left)),
+          left ? chip(t('f_out'), 'bad') : chip(t('mny_out_done'), 'ok'),
+          h('button', { class: 'ib', type: 'button', 'aria-label': t('edit'), onclick: () => owedModal(x) }, ico('edit', 15)));
+      };
+
+      fill(body,
+        h('div', { class: 'stats' },
+          h('div', { class: 'stat' }, h('span', null, t('mny_collected')), h('b', null, money(paid))),
+          h('div', { class: 'stat' + (open ? ' warn' : '') }, h('span', null, t('f_in')), h('b', null, money(open))),
+          h('div', { class: 'stat' + (out ? ' bad' : '') }, h('span', null, t('f_out')), h('b', null, money(out)))),
+
+        h('h3', { class: 'sub' }, t('mny_in')),
+        cps.length ? h('div', { class: 'cklist' }, cps.map(inRow)) : empty(t('mny_no_in')),
+        isStaff() ? h('div', { class: 'acts' }, h('button', { class: 'btn ghost sm', type: 'button',
+          onclick: () => payModal({}) }, ico('plus', 16), t('mny_add_in'))) : null,
+
+        h('h3', { class: 'sub' }, t('mny_out')),
+        pys.length ? h('div', { class: 'cklist' }, pys.map(outRow)) : empty(t('mny_no_out')),
+        isStaff() ? h('div', { class: 'acts' }, h('button', { class: 'btn ghost sm', type: 'button',
+          onclick: () => owedModal({}) }, ico('plus', 16), t('mny_add_out'))) : null);
+    }
+
+    draw();
+  }
+
   async function viewProject(main, pid) {
     const [list, people] = await Promise.all([API.projects(), API.people(pid)]);
     const p = list.find((x) => x.id === pid);
@@ -400,7 +547,7 @@
     const names = {}; people.forEach((x) => { names[x.id] = x.full_name; }); profiles.forEach((x) => { names[x.id] = x.full_name; });
     /* Scope primero, chat después. Equipo y horas al final: no son del día a día. */
     /* Selecciones solo para la oficina: es plata del cliente, no algo que Miguel chulee. */
-    const panes = ['scope'].concat(isViewer() ? ['selections'] : [])
+    const panes = ['scope'].concat(isViewer() ? ['selections', 'money'] : [])
       .concat(['feed', 'materials', 'receipts', 'team']).concat(canTime ? ['time'] : []);
     if (panes.indexOf(S.ptab) < 0) S.ptab = 'scope';
     const body = h('div', { class: 'pbody' });
@@ -418,6 +565,7 @@
     if (S.ptab === 'scope') scopePane(body, p, names, myRole, go);
     else if (S.ptab === 'feed') feedPane(body, pid, names, canPost);
     else if (S.ptab === 'selections') selectionsPane(body, p, names);
+    else if (S.ptab === 'money') moneyPane(body, p);
     else if (S.ptab === 'materials') materialsPane(body, p, names, canPost);
     else if (S.ptab === 'receipts') receiptsPane(body, pid, names);
     else if (S.ptab === 'team') teamPane(body, p, people, profiles);
@@ -734,7 +882,7 @@
           ? h('img', { class: 'othumb', src: safeUrl(urls[o.photo_path]), alt: '' })
           : h('div', { class: 'othumb none' }),
         h('div', { class: 'tx' }, h('b', null, o.title),
-          h('small', null, [o.title_en, o.note, o.price != null ? money(o.price) : '',
+          h('small', null, [o.title_en, o.extra, o.note, o.price != null ? money(o.price) : '',
             o.link ? t('opts_haslink') : ''].filter(Boolean).join(' · ')),
           o.from_client ? chip(t('opts_fromclient'), 'gold') : null,
           sel.chosen_option_id === o.id ? chip(t('opts_chosen'), 'ok') : null),
@@ -753,6 +901,7 @@
         title: h('input', { required: true, value: o ? o.title : '' }),
         title_en: h('input', { value: o ? o.title_en : '', placeholder: t('opts_en_ph') }),
         note: h('input', { value: o ? o.note : '', placeholder: t('opts_note_ph') }),
+        extra: h('input', { value: o ? o.extra : '', placeholder: t('opts_extra_ph') }),
         link: h('input', { type: 'url', value: o ? o.link : '', placeholder: 'https://…' }),
         price: h('input', { type: 'number', step: '0.01', min: '0', inputmode: 'decimal',
           value: o && o.price != null ? o.price : '' }),
@@ -765,6 +914,7 @@
             id: o && o.id, selection_id: sel.id, project_id: pid,
             title: f.title.value.trim(), title_en: f.title_en.value.trim(),
             note: f.note.value.trim(), link: f.link.value.trim(),
+            extra: f.extra.value.trim(),
             price: f.price.value === '' ? null : Number(f.price.value),
             sort: o ? o.sort : Date.now() % 100000,
           }, f.photo.files && f.photo.files[0]);
@@ -773,6 +923,7 @@
           field(t('opts_title'), f.title),
           field(t('opts_en'), f.title_en),
           h('div', { class: 'two' }, field(t('opts_note'), f.note), field(t('opts_price') + ' ($)', f.price)),
+          field(t('opts_extra'), f.extra),
           field(t('opts_link'), f.link),
           field(t('opts_photo'), f.photo),
           h('div', { class: 'acts' },
@@ -1037,7 +1188,7 @@
     }
     function entryEditor(e) {
       const inn = h('input', { type: 'datetime-local', required: true, value: e ? toLocalInput(e.clock_in) : '' }); const out = h('input', { type: 'datetime-local', value: e ? toLocalInput(e.clock_out) : '' });
-      const ws = o.people ? o.people.filter((p) => p.status === 'approved' && !p.is_admin) : [];
+      const ws = o.people ? o.people.filter((p) => p.status === 'approved' && !p.is_admin && !p.is_client) : [];
       const wsel = h('select', { required: true }, ws.map((p) => h('option', { value: p.id }, p.full_name))); const psel = h('select', { required: true }, Object.keys(o.projects || {}).map((k) => h('option', { value: k }, o.projects[k].name)));
       if (o.fixedProject) psel.value = o.fixedProject;
       const err = h('p', { class: 'err' }); const save = h('button', { class: 'btn', type: 'submit' }, t('save'));
@@ -1159,7 +1310,7 @@
       const nm = {}; people.forEach((p) => { nm[p.id] = p; });
       const rq = {}; reqs.forEach((r) => { rq[r.id] = r; });
       const review = docs.filter((d) => d.status === 'submitted');
-      const approved = people.filter((p) => p.status === 'approved' && !p.is_admin && !p.is_office);
+      const approved = people.filter((p) => p.status === 'approved' && !p.is_admin && !p.is_client && !p.is_office);
       const missing = []; approved.forEach((p) => reqs.filter((r) => r.required && (r.for_grp === 'all' || r.for_grp === p.grp)).forEach((r) => { const d = docs.find((x) => x.worker_id === p.id && x.requirement_id === r.id); if (!d || d.status === 'rejected') missing.push({ p, r, rejected: !!d }); }));
       const openDoc = async (d) => {
         if (d.file_path) { const u = await API.urls([d.file_path], 'worker-docs'); const url = u[d.file_path]; if (!url) { toast(t('err_generic'), true); return; } if (/\.(jpe?g|png|gif|webp)$/i.test(d.file_name || '')) lightbox(url, d.file_name); else window.open(url, '_blank', 'noopener'); }
@@ -1195,7 +1346,7 @@
         pays.length ? h('div', { class: 'list' }, pays.map((p) => h('div', { class: 'card lrow' }, h('div', null, h('b', null, money(p.amount)), h('small', null, [fDate(p.paid_on + 'T12:00:00', { month: 'short', day: 'numeric', year: 'numeric' }), p.method, p.memo].filter(Boolean).join(' · ')))))) : empty(t('no_pay')));
       return;
     }
-    const people = (await API.profiles()).filter((p) => p.status === 'approved' && !p.is_admin); const nm = {}; people.forEach((p) => { nm[p.id] = p.full_name; });
+    const people = (await API.profiles()).filter((p) => p.status === 'approved' && !p.is_admin && !p.is_client); const nm = {}; people.forEach((p) => { nm[p.id] = p.full_name; });
     const sel = h('select', { required: true }, people.map((p) => h('option', { value: p.id }, p.full_name))); const amt = h('input', { type: 'number', step: '0.01', min: '0', required: true, inputmode: 'decimal' });
     const date = h('input', { type: 'date', required: true, value: dkey(new Date()) }); const meth = h('select', null, ['Zelle', 'Cash', 'Check', 'ACH', 'Other'].map((x) => h('option', { value: x }, x))); const memo = h('input', { placeholder: t('pay_memo_ph') });
     const go = h('button', { class: 'btn', type: 'submit' }, t('record_payment'));
@@ -1205,12 +1356,33 @@
         h('button', { class: 'ib', type: 'button', 'aria-label': t('delete'), onclick: async () => { if (await askConfirm(t('del_pay_q'))) { await API.deletePayment(p.id); refresh(); } } }, ico('x', 16))))) : empty(t('no_pay_admin')));
   }
 
+  /* Las cuentas creadas desde Supabase entran sin nombre: ahí no hay formulario
+     que lo pida. Esto deja ponérselo sin tocar la base. */
+  function clientNameEditor(c, done) {
+    const f = {
+      full_name: h('input', { required: true, value: c.full_name || '' }),
+      phone: h('input', { type: 'tel', value: c.phone || '' }),
+    };
+    const save = h('button', { class: 'btn', type: 'submit' }, t('save'));
+    const m = modal(c.email, h('form', { class: 'mb frm', onsubmit: (e) => { e.preventDefault(); run(save, async () => {
+      await API.updateProfile(c.id, { full_name: f.full_name.value.trim(), phone: f.phone.value.trim() });
+      m.close(); toast(t('saved')); done();
+    }); } },
+      field(t('full_name'), f.full_name),
+      field(t('phone'), f.phone),
+      h('div', { class: 'acts' }, save)));
+  }
+
   /* ============================ CENTRO DE MANDO (admin) ============================ */
   const MODS = ['projects', 'clock', 'shifts', 'docs', 'pay'];
   async function viewCmd(main) {
-    const [people, defaults, docs, reqs, open] = await Promise.all([API.profiles(), API.groupDefaults(), API.docs(), API.requirements(), API.openEntries()]);
-    const pending = people.filter((p) => p.status === 'pending');
-    const team = people.filter((p) => (p.status === 'approved' || p.status === 'disabled') && !p.is_admin);
+    const [people, defaults, docs, reqs, open, pcl, projs] = await Promise.all([API.profiles(), API.groupDefaults(), API.docs(), API.requirements(), API.openEntries(), API.projectClients().catch(() => []), API.projects().catch(() => [])]);
+    /* Un cliente entró por la puerta del cliente: no es de la cuadrilla, no se le
+       asigna obra y no se le paga. Mezclarlo con el personal es como se termina
+       mandando a Michele a una obra. */
+    const clients = people.filter((p) => p.is_client);
+    const pending = people.filter((p) => p.status === 'pending' && !p.is_client);
+    const team = people.filter((p) => (p.status === 'approved' || p.status === 'disabled') && !p.is_admin && !p.is_client);
     const toReview = docs.filter((d) => d.status === 'submitted').length;
     const stats = h('div', { class: 'stats' }, [[t('pending_req'), pending.length, pending.length ? 'warn' : ''], [t('active_people'), team.filter((p) => p.status === 'approved').length, ''], [t('on_site_now'), open.length, open.length ? 'ok' : ''], [t('to_review'), toReview, toReview ? 'warn' : '']].map((x) => h('div', { class: 'stat ' + x[2] }, h('span', null, x[0]), h('b', null, x[1]))));
     /* solicitudes */
@@ -1238,10 +1410,31 @@
         h('div', { class: 'dgrid' }, MODS.map((k) => h('label', { class: 'dg' }, switchEl(cur[k], (v) => { cur[k] = v; API.saveDefaults(g, cur).then(() => toast(t('saved'))).catch((e) => toast(errText(e), true)); }, t('mod_' + k)), h('span', null, t('mod_' + k))))),
         h('button', { class: 'btn ghost sm', type: 'button', onclick: async () => { if (await askConfirm(t('apply_all_q', { g: t('grp_short_' + g) }), t('apply_all'))) { await Promise.all(team.filter((p) => p.grp === g).map((p) => API.updateProfile(p.id, { perms: Object.assign({}, cur) }))); toast(t('saved')); refresh(); } } }, t('apply_all')));
     });
+    /* ---- clientes con acceso al portal ---- */
+    const pnames = {}; projs.forEach((x) => { pnames[x.id] = x.name; });
+    const seen = {}; pcl.forEach((c) => { (seen[c.client_id] = seen[c.client_id] || []).push(pnames[c.project_id] || '—'); });
+    const clientRows = clients.map((c) => h('div', { class: 'mx row' + (c.status === 'approved' ? '' : ' off') },
+      h('span', { class: 'c0' }, h('span', { class: 'av sm' }, ini(c.full_name || c.email)),
+        h('span', null, h('b', null, c.full_name || h('i', { class: 'mut' }, t('cl_noname'))),
+          h('small', null, c.email))),
+      h('span', { 'data-l': t('cl_sees') }, (seen[c.id] || []).length
+        ? (seen[c.id] || []).map((n) => chip(n, 'gold'))
+        : chip(t('cl_noproject'), 'bad')),
+      h('span', { 'data-l': t('active') }, switchEl(c.status === 'approved',
+        (v) => API.updateProfile(c.id, { status: v ? 'approved' : 'disabled' }).then(refresh)
+          .catch((e) => { toast(errText(e), true); refresh(); }), t('active') + ' ' + (c.full_name || c.email))),
+      h('button', { class: 'ib', type: 'button', 'aria-label': t('edit'), onclick: () => clientNameEditor(c, refresh) }, ico('edit', 15))));
+
     fill(main, secH(t('tab_cmd')), stats,
       h('h3', { class: 'sub' }, t('requests'), ' ', chip(String(pending.length), pending.length ? 'warn' : 'mut')), reqBox,
       h('h3', { class: 'sub' }, t('access_matrix')), h('p', { class: 'mut small' }, t('matrix_hint')),
       team.length ? h('div', { class: 'card matrix' }, head, rows) : empty(t('no_team_yet')),
+      clients.length ? h('h3', { class: 'sub' }, t('cl_h'), ' ', chip(String(clients.length), 'gold')) : null,
+      clients.length ? h('p', { class: 'mut small' }, t('cl_hint')) : null,
+      clients.length ? h('div', { class: 'card matrix clients' },
+        h('div', { class: 'mx head' }, h('span', { class: 'c0' }, t('person')),
+          h('span', null, t('cl_sees')), h('span', null, t('active')), h('span', null, '')),
+        clientRows) : null,
       h('h3', { class: 'sub' }, t('new_defaults')), h('div', { class: 'grid2' }, defCards));
   }
 
