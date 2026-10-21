@@ -121,6 +121,22 @@
       /* --- plata abierta: lo que deben y lo que se debe --- */
       clientPayments: () => q(sb.from('client_payments').select('*')),
       payables: () => q(sb.from('payables').select('*')),
+      /* --- opciones que el cliente escoge --- */
+      options: (selId) => q(sb.from('selection_options').select('*').eq('selection_id', selId).order('sort')),
+      async saveOption(o, file) {
+        const row = { ...o };
+        if (file) {
+          const f = await shrink(file, 1400, 0.82);
+          const path = o.project_id + '/' + uid();
+          const { error } = await sb.storage.from('project-files').upload(path, f, { contentType: f.type });
+          if (error) throw error;
+          row.photo_path = path;
+        }
+        delete row.project_id;
+        if (row.id) return q(sb.from('selection_options').update(row).eq('id', row.id));
+        return q(sb.from('selection_options').insert(row));
+      },
+      deleteOption: (id) => q(sb.from('selection_options').delete().eq('id', id)),
 
       /* gastos fijos */
       fixed: () => q(sb.from('fixed_costs').select('*').order('title')),
@@ -246,7 +262,7 @@
       const scope = [], checks = [], materials = [], selections = [], fixed = [];
       const targets = { instagram: 4, facebook: 4, facebook_groups: 7, tiktok: 4, blog: 2, linkedin: 2, youtube: 4, yelp: 2 };
       return { session: null, targets, profiles, projects, members, messages, entries, shifts, claims: [],
-        reqs, docs, payments, expenses, posts, leads, scope, checks, materials, selections, fixed, files: {},
+        reqs, docs, payments, expenses, posts, leads, scope, checks, materials, selections, options: [], fixed, files: {},
         defaults: { crew: { projects: true, clock: true, shifts: false, docs: true, pay: true }, gigs: { projects: true, clock: true, shifts: true, docs: true, pay: true } } };
     }
     let DB;
@@ -371,6 +387,16 @@
       /* En modo de prueba no hay saldos cargados: devuelve vacío, no inventa. */
       async clientPayments() { need(viewer()); return wait([]); },
       async payables() { need(viewer()); return wait([]); },
+      async options(selId) { need(viewer()); return wait((DB.options || []).filter((o) => o.selection_id === selId).sort((a, b) => (a.sort || 0) - (b.sort || 0))); },
+      async saveOption(o, file) {
+        need(staff()); DB.options = DB.options || [];
+        const row = { ...o }; delete row.project_id;
+        if (file) { const f = await shrink(file, 900, 0.6); row.photo_path = 'opt-' + uid(); DB.files[row.photo_path] = await toDataURL(f); }
+        if (row.id) Object.assign(DB.options.find((x) => x.id === row.id), row);
+        else DB.options.push({ ...row, id: uid(), from_client: false, created_at: new Date().toISOString() });
+        save();
+      },
+      async deleteOption(id) { need(staff()); DB.options = (DB.options || []).filter((o) => o.id !== id); save(); },
 
       async fixed() { need(viewer()); return wait(DB.fixed.slice().sort((a, b) => a.title.localeCompare(b.title))); },
       async saveFixed(f) { need(finance()); if (f.id) Object.assign(DB.fixed.find((x) => x.id === f.id), f); else DB.fixed.push({ ...f, id: uid(), created_at: new Date().toISOString() }); save(); },

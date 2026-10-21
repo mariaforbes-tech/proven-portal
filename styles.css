@@ -438,3 +438,12 @@ main{max-width:var(--max);margin:0 auto;padding:18px 16px 70px;width:100%;flex:1
 .moneybar small{font-size:.74rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;opacity:.85}
 .moneybar b{font-size:1.35rem;letter-spacing:-.02em}
 .pcard .owed{margin-top:2px}
+
+/* --- gestor de opciones del cliente --- */
+.optlist{display:grid;gap:9px;margin:12px 0}
+.optrow{display:flex;align-items:center;gap:11px;background:#fff;border:1px solid var(--hair);border-radius:var(--r2);padding:10px}
+.othumb{width:54px;height:54px;object-fit:cover;border-radius:8px;flex:none;background:#EFEDE6}
+.othumb.none{background:repeating-linear-gradient(45deg,#EFEDE6,#EFEDE6 6px,#E7E4DC 6px,#E7E4DC 12px)}
+.optrow .tx{flex:1;min-width:0;display:grid;gap:3px}
+.optrow .tx b{font-size:.92rem}
+.optrow .tx small{color:var(--mut);font-size:.8rem}

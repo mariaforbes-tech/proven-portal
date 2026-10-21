@@ -696,6 +696,8 @@
         h('div', { class: 'tx' }, h('b', null, x.title),
           h('small', null, bits.join(' · '),
             over ? chip(t('sel_over', { m: money(Number(x.actual_cost) - Number(x.allowance)) }), 'bad') : null)),
+        isStaff() ? h('button', { class: 'btn ghost sm', type: 'button',
+          onclick: () => optionsManager(x, p.id, redo) }, t('opts_btn')) : null,
         isStaff() ? h('button', { class: 'ib', type: 'button', 'aria-label': t('edit'),
           onclick: () => selectionEditor(x, p.id, redo) }, ico('edit', 15)) : null);
     };
@@ -712,6 +714,75 @@
           h('span', null, t('sel_picked')), h('b', null, money(actTotal)), h('small', null, diffTxt)) : null),
       withAll.length ? null : h('p', { class: 'selnote' }, h('b', null, t('sel_no_allow')), ' ', t('sel_no_allow_sub')),
       sorted.length ? h('div', { class: 'cklist' }, sorted.map(row)) : empty(t('sel_empty'), t('sel_empty_sub')));
+  }
+
+
+  /* ---------- las opciones que el cliente va a ver ----------
+     Aquí se le arman: foto, link y precio. Sin esto el cliente escribe a ciegas. */
+  async function optionsManager(sel, pid, done) {
+    const body = h('div', { class: 'mb' }, spin());
+    const mo = modal(t('opts_h') + ' · ' + sel.title, body, { wide: true });
+
+    async function draw() {
+      let list;
+      try { list = await API.options(sel.id); }
+      catch (e) { fill(body, empty(t('err_generic'), errText(e))); return; }
+      const urls = await resolveUrls(list.map((o) => o.photo_path)).catch(() => ({}));
+
+      const row = (o) => h('div', { class: 'optrow' },
+        o.photo_path && urls[o.photo_path]
+          ? h('img', { class: 'othumb', src: safeUrl(urls[o.photo_path]), alt: '' })
+          : h('div', { class: 'othumb none' }),
+        h('div', { class: 'tx' }, h('b', null, o.title),
+          h('small', null, [o.title_en, o.note, o.price != null ? money(o.price) : '',
+            o.link ? t('opts_haslink') : ''].filter(Boolean).join(' · ')),
+          o.from_client ? chip(t('opts_fromclient'), 'gold') : null,
+          sel.chosen_option_id === o.id ? chip(t('opts_chosen'), 'ok') : null),
+        h('button', { class: 'ib', type: 'button', 'aria-label': t('edit'),
+          onclick: () => form(o) }, ico('edit', 15)));
+
+      fill(body,
+        h('p', { class: 'mut sm' }, t('opts_p')),
+        list.length ? h('div', { class: 'optlist' }, list.map(row)) : empty(t('opts_none')),
+        h('div', { class: 'acts' }, h('button', { class: 'btn', type: 'button',
+          onclick: () => form(null) }, ico('plus', 16), t('opts_add'))));
+    }
+
+    function form(o) {
+      const f = {
+        title: h('input', { required: true, value: o ? o.title : '' }),
+        title_en: h('input', { value: o ? o.title_en : '', placeholder: t('opts_en_ph') }),
+        note: h('input', { value: o ? o.note : '', placeholder: t('opts_note_ph') }),
+        link: h('input', { type: 'url', value: o ? o.link : '', placeholder: 'https://…' }),
+        price: h('input', { type: 'number', step: '0.01', min: '0', inputmode: 'decimal',
+          value: o && o.price != null ? o.price : '' }),
+        photo: h('input', { type: 'file', accept: 'image/*' }),
+      };
+      const save = h('button', { class: 'btn', type: 'submit' }, t('save'));
+      const m2 = modal(o ? t('opts_edit') : t('opts_add'),
+        h('form', { class: 'mb frm', onsubmit: (e) => { e.preventDefault(); run(save, async () => {
+          await API.saveOption({
+            id: o && o.id, selection_id: sel.id, project_id: pid,
+            title: f.title.value.trim(), title_en: f.title_en.value.trim(),
+            note: f.note.value.trim(), link: f.link.value.trim(),
+            price: f.price.value === '' ? null : Number(f.price.value),
+            sort: o ? o.sort : Date.now() % 100000,
+          }, f.photo.files && f.photo.files[0]);
+          m2.close(); toast(t('saved')); draw(); done();
+        }); } },
+          field(t('opts_title'), f.title),
+          field(t('opts_en'), f.title_en),
+          h('div', { class: 'two' }, field(t('opts_note'), f.note), field(t('opts_price') + ' ($)', f.price)),
+          field(t('opts_link'), f.link),
+          field(t('opts_photo'), f.photo),
+          h('div', { class: 'acts' },
+            o ? h('button', { class: 'btn ghost danger-t', type: 'button', onclick: async () => {
+              if (await askConfirm(t('opts_del_q'))) { await API.deleteOption(o.id); m2.close(); draw(); done(); }
+            } }, t('delete')) : null,
+            save)));
+    }
+
+    draw();
   }
 
   function selectionEditor(x, pid, done) {
