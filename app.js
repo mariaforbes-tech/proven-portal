@@ -1924,17 +1924,89 @@
     if (!CRD) { const n = new Date().getDay(); CRD = (n >= 1 && n <= 5) ? n : 1; }
 
     async function draw() {
-      let themes, groups, posts;
+      let themes, groups, posts, copy, angles, plan;
       try {
-        const r = await Promise.all([API.postThemes(), API.fbGroups(), API.groupPosts(CRW)]);
+        const r = await Promise.all([API.postThemes(), API.fbGroups(), API.groupPosts(CRW),
+          API.postCopy(CRW), API.postAngles(), API.weekPlan(CRW)]);
         themes = r[0]; groups = r[1].filter((g) => g.active); posts = r[2];
+        copy = r[3]; angles = r[4]; plan = (r[5] || [])[0] || null;
       } catch (e) { fill(slot, empty(t('err_generic'), errText(e))); return; }
 
       const th = themes.find((x) => x.day === CRD) || { title: '', hint: '' };
+
+      /* El ángulo rota solo: semanas transcurridas desde el lunes ancla, módulo
+         la cantidad de ángulos. Así nunca se repite seguido sin que nadie lleve
+         la cuenta, y si ella quiere otro esa semana lo cambia y queda guardado. */
+      const ANCHOR = Date.UTC(2026, 9, 19);   /* lunes 19 de octubre de 2026 */
+      function suggestedAngle() {
+        if (!angles.length) return null;
+        const wks = Math.round((Date.UTC(
+          Number(CRW.slice(0, 4)), Number(CRW.slice(5, 7)) - 1, Number(CRW.slice(8, 10))
+        ) - ANCHOR) / 604800000);
+        const i = ((wks % angles.length) + angles.length) % angles.length;
+        return angles[i];
+      }
+      const ang = (plan && angles.find((a) => a.id === plan.angle_id)) || suggestedAngle();
       const donePairs = {}; posts.forEach((p) => { donePairs[p.group_id + '|' + p.day] = p; });
       const isDone = (g, day) => !!donePairs[g.id + '|' + day];
       const doneToday = groups.filter((g) => isDone(g, CRD)).length;
       const weekDone = posts.length, weekTotal = groups.length * 5;
+
+      /* El texto que le toca a ESE grupo ESE día. Un grupo de contratistas
+         no recibe el mismo post que uno de dueños de casa: en varios de esos
+         grupos un anuncio para dueños es motivo de expulsión. */
+      function audienceOf(g) {
+        const a = g.audience || 'both';
+        if (a !== 'both') return a;
+        return CRD === 5 ? 'contractors' : 'owners';
+      }
+      function copyFor(g) {
+        const aud = audienceOf(g);
+        const row = copy.find((c) => c.day === CRD && c.audience === aud);
+        /* {hood} se cambia por el barrio del grupo: un solo texto sirve para
+           todos los grupos de barrio y cada uno sale hablándole al suyo. */
+        let body = row ? row.body : '';
+        body = body.replace(/\{hood\}/g, (g.hood || '').trim() || 'New York');
+        const pre = (g.prefix || '').trim();
+        return { aud: aud, text: (pre ? pre + '\n\n' : '') + body, body: body, hasBody: !!body };
+      }
+
+      function postModal(g) {
+        const c = copyFor(g);
+        const box = h('textarea', { rows: 12, readonly: !isStaff() }, c.text);
+        const cp = h('button', { class: 'btn', type: 'button' }, t('cr_copy'));
+        cp.onclick = async () => {
+          try { await navigator.clipboard.writeText(box.value); toast(t('cr_copied')); }
+          catch (e) { box.select(); toast(t('cr_copy_manual'), true); }
+        };
+        const prev = isStaff() && !c.hasBody
+          ? h('button', { class: 'btn ghost', type: 'button' }, t('cr_bring_prev')) : null;
+        if (prev) prev.onclick = () => run(prev, async () => {
+          const pw = dkey(addDays(new Date(CRW + 'T12:00:00'), -7));
+          const old = await API.postCopy(pw);
+          const r = old.find((x) => x.day === CRD && x.audience === c.aud);
+          if (!r || !r.body) { toast(t('cr_no_prev'), true); return; }
+          box.value = ((g.prefix || '').trim() ? (g.prefix || '').trim() + '\n\n' : '') + r.body;
+          toast(t('cr_prev_ok'));
+        });
+        const save = isStaff() ? h('button', { class: 'btn ghost', type: 'button' }, t('cr_save_copy')) : null;
+        if (save) save.onclick = () => run(save, async () => {
+          /* El prefijo del grupo no se guarda dentro del texto común: se le
+             vuelve a pegar encima cada vez, solo a ese grupo. */
+          let v = box.value;
+          const pre = (g.prefix || '').trim();
+          if (pre && v.indexOf(pre) === 0) v = v.slice(pre.length).replace(/^\s+/, '');
+          await API.saveCopy(CRW, CRD, c.aud, v);
+          toast(t('saved')); draw();
+        });
+        modal(g.name, h('div', { class: 'mb' },
+          h('p', { class: 'mut sm' }, t('cr_aud_' + c.aud) + ' · ' + L(th, 'title')
+            + (ang ? ' · ' + L(ang, 'title') : '')),
+          c.hasBody ? null : h('p', { class: 'mut sm' }, t('cr_nocopy')),
+          box,
+          g.notes ? h('p', { class: 'mut sm warnline' }, g.notes) : null,
+          h('div', { class: 'acts' }, prev, save, cp)), { wide: true });
+      }
 
       function groupEditor(g) {
         const f = {
@@ -1942,18 +2014,27 @@
           url: h('input', { type: 'url', required: true, placeholder: 'https://www.facebook.com/groups/…', value: g.url || '' }),
           zone: h('input', { value: g.zone || '', placeholder: t('cr_zone_ph') }),
           notes: h('input', { value: g.notes || '', placeholder: t('cr_rules_ph') }),
+          prefix: h('input', { value: g.prefix || '', placeholder: t('cr_prefix_ph') }),
+          hood: h('input', { value: g.hood || '', placeholder: t('cr_hood_ph') }),
+          audience: h('select', null, ['owners', 'neighborhood', 'contractors', 'both'].map((k) =>
+            h('option', { value: k }, t('cr_aud_' + k)))),
         };
+        f.audience.value = g.audience || 'both';
         const save = h('button', { class: 'btn', type: 'submit' }, t('save'));
         const m = modal(g.id ? t('cr_edit_g') : t('cr_add_g'),
           h('form', { class: 'mb frm', onsubmit: (e) => { e.preventDefault(); run(save, async () => {
             await API.saveFbGroup({ id: g.id, name: f.name.value.trim(), url: f.url.value.trim(),
               zone: f.zone.value.trim(), notes: f.notes.value.trim(), active: true,
+              audience: f.audience.value, prefix: f.prefix.value.trim(),
+              hood: f.hood.value.trim(),
               sort: g.sort != null ? g.sort : (groups.length + 1) * 10 });
             m.close(); toast(t('saved')); draw();
           }); } },
             field(t('cr_g_name'), f.name),
             field(t('cr_g_url'), f.url),
-            h('div', { class: 'two' }, field(t('cr_g_zone'), f.zone), field(t('cr_g_rules'), f.notes)),
+            h('div', { class: 'two' }, field(t('cr_g_zone'), f.zone), field(t('cr_g_aud'), f.audience)),
+            field(t('cr_g_rules'), f.notes),
+            h('div', { class: 'two' }, field(t('cr_g_hood'), f.hood), field(t('cr_g_prefix'), f.prefix)),
             h('div', { class: 'acts' },
               g.id ? h('button', { class: 'btn ghost danger-t', type: 'button', onclick: async () => {
                 if (await askConfirm(t('cr_del_g_q', { n: g.name }))) { await API.deleteFbGroup(g.id); m.close(); draw(); }
@@ -1998,7 +2079,9 @@
             }) }, ico('check', 15)),
           h('div', { class: 'tx' },
             h('b', null, g.name),
-            h('small', null, [g.zone, g.notes].filter(Boolean).join(' · ') || t('cr_norules'))),
+            h('small', null, [t('cr_aud_' + (g.audience || 'both')), g.zone, g.notes]
+              .filter(Boolean).join(' · '))),
+          h('button', { class: 'btn sm', type: 'button', onclick: () => postModal(g) }, t('cr_see')),
           g.url ? h('a', { class: 'btn ghost sm', href: g.url, target: '_blank', rel: 'noopener noreferrer' },
             t('cr_open')) : null,
           isStaff() ? h('button', { class: 'ib', type: 'button', 'aria-label': t('edit'),
@@ -2007,7 +2090,7 @@
 
       const pct = weekTotal ? Math.round((weekDone / weekTotal) * 100) : 0;
 
-      fill(slot, h('div', { class: 'card' },
+      const card = h('div', { class: 'card' },
         h('div', { class: 'row between wrap' },
           h('h3', null, t('cr_h')),
           h('div', { class: 'nav2' },
@@ -2018,6 +2101,15 @@
               onclick: () => { CRW = dkey(addDays(new Date(CRW + 'T12:00:00'), 7)); draw(); } }, ico('back', 18)),
             h('button', { class: 'lnk', type: 'button',
               onclick: () => { CRW = dkey(weekStart(new Date())); draw(); } }, t('this_week')))),
+
+        ang ? h('div', { class: 'angbox' },
+          h('span', { class: 'lbl' }, t('cr_angle')),
+          h('b', null, L(ang, 'title')),
+          isStaff() ? h('select', { 'aria-label': t('cr_angle'),
+            onchange: (e) => run(e.target, async () => {
+              await API.setWeekAngle(CRW, Number(e.target.value)); draw();
+            }) }, angles.map((a) => h('option', { value: a.id }, L(a, 'title')))) : null,
+          ang.hint ? h('p', { class: 'mut sm' }, ang.hint) : null) : null,
 
         h('div', { class: 'fchips' }, chips),
 
@@ -2036,7 +2128,10 @@
           : empty(t('cr_nogroups'), t('cr_nogroups_sub')),
 
         isStaff() ? h('div', { class: 'acts' }, h('button', { class: 'btn ghost sm', type: 'button',
-          onclick: () => groupEditor({}) }, ico('plus', 16), t('cr_add_g'))) : null));
+          onclick: () => groupEditor({}) }, ico('plus', 16), t('cr_add_g'))) : null);
+      const sel = card.querySelector('.angbox select');
+      if (sel && ang) sel.value = String(ang.id);
+      fill(slot, card);
     }
     draw();
   }

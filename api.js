@@ -122,6 +122,14 @@
       projectClients: () => q(sb.from('project_clients').select('*')),
       /* --- cronopost: grupos de Facebook --- */
       postThemes: () => q(sb.from('post_themes').select('*').order('day')),
+      postAngles: () => q(sb.from('post_angles').select('*').order('id')),
+      weekPlan: (wk) => q(sb.from('week_plan').select('*').eq('week_start', wk)),
+      setWeekAngle: (wk, angle) => q(sb.from('week_plan')
+        .upsert({ week_start: wk, angle_id: angle }, { onConflict: 'week_start' })),
+      postCopy: (wk) => q(sb.from('post_copy').select('*').eq('week_start', wk)),
+      saveCopy: (wk, day, aud, body) => q(sb.from('post_copy')
+        .upsert({ week_start: wk, day: day, audience: aud, body: body },
+                { onConflict: 'week_start,day,audience' })),
       fbGroups: () => q(sb.from('fb_groups').select('*').order('sort')),
       groupPosts: (wk) => q(sb.from('group_posts').select('*').eq('week_start', wk)),
       saveFbGroup(g) {
@@ -305,7 +313,7 @@
       const scope = [], checks = [], materials = [], selections = [], fixed = [];
       const targets = { instagram: 4, facebook: 4, facebook_groups: 7, tiktok: 4, blog: 2, linkedin: 2, youtube: 4, yelp: 2 };
       return { session: null, targets, profiles, projects, members, messages, entries, shifts, claims: [],
-        reqs, docs, payments, expenses, posts, leads, scope, checks, materials, selections, options: [], cpays: [], pays: [], pclients: [], debts: [], base: null, themes: [], fbg: [], gposts: [], fixed, files: {},
+        reqs, docs, payments, expenses, posts, leads, scope, checks, materials, selections, options: [], cpays: [], pays: [], pclients: [], debts: [], base: null, themes: [], fbg: [], gposts: [], copy: [], angles: [], wplan: [], fixed, files: {},
         defaults: { crew: { projects: true, clock: true, shifts: false, docs: true, pay: true }, gigs: { projects: true, clock: true, shifts: true, docs: true, pay: true } } };
     }
     let DB;
@@ -430,6 +438,21 @@
       /* En modo de prueba no hay saldos cargados: devuelve vacío, no inventa. */
       async projectClients() { need(staff()); return wait(DB.pclients || []); },
       async postThemes() { return wait(DB.themes || []); },
+      async postAngles() { return wait(DB.angles || []); },
+      async weekPlan(wk) { return wait((DB.wplan || []).filter((x) => x.week_start === wk)); },
+      async setWeekAngle(wk, angle) {
+        need(staff()); DB.wplan = DB.wplan || [];
+        const f = DB.wplan.find((x) => x.week_start === wk);
+        if (f) f.angle_id = angle; else DB.wplan.push({ week_start: wk, angle_id: angle });
+        save();
+      },
+      async postCopy(wk) { return wait((DB.copy || []).filter((x) => x.week_start === wk)); },
+      async saveCopy(wk, day, aud, body) {
+        need(staff()); DB.copy = DB.copy || [];
+        const f = DB.copy.find((x) => x.week_start === wk && x.day === day && x.audience === aud);
+        if (f) f.body = body; else DB.copy.push({ week_start: wk, day: day, audience: aud, body: body });
+        save();
+      },
       async fbGroups() { return wait((DB.fbg || []).slice().sort((a, b) => (a.sort || 0) - (b.sort || 0))); },
       async groupPosts(wk) { return wait((DB.gposts || []).filter((x) => x.week_start === wk)); },
       async saveFbGroup(g) {

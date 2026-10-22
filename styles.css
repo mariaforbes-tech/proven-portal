@@ -469,3 +469,14 @@ details.more>summary{cursor:pointer;font-size:.86rem;color:var(--mut);font-weigh
 .thbox>p{flex-basis:100%;margin:0}
 .fchip.ok{border-color:var(--ok);color:var(--ok)}
 .fchip b{font-weight:800;margin-right:4px}
+
+.warnline{background:var(--warnbg);color:var(--warn);border-radius:9px;padding:9px 11px;font-weight:600}
+.mb textarea{width:100%;font:inherit;line-height:1.5}
+
+/* --- ángulo de la semana --- */
+.angbox{background:linear-gradient(135deg,#F6EDD6 0%,#FBFAF7 100%);border:1px solid var(--gold3);
+  border-radius:var(--r2);padding:12px 14px;display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:10px}
+.angbox .lbl{font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;font-weight:800;color:#7A5E12}
+.angbox>b{font-size:1.06rem}
+.angbox select{font:inherit;padding:6px 9px;border:1px solid var(--hair);border-radius:9px;background:#fff}
+.angbox>p{flex-basis:100%;margin:0}
