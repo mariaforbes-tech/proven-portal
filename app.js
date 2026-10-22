@@ -133,6 +133,13 @@
         h('button', { class: 'btn danger', type: 'button', onclick: () => done(true) }, okLabel || t('delete')))));
     });
   }
+  /* Texto bilingüe guardado en la base: usa la columna _en cuando el portal
+     está en inglés y hay traducción; si no, cae al español. */
+  const L = (row, f) => {
+    if (!row) return '';
+    if (S.lang === 'en') { const v = row[f + '_en']; if (v && String(v).trim()) return v; }
+    return row[f] == null ? '' : row[f];
+  };
   const field = (label, input, hint) => h('label', { class: 'fld' }, h('span', null, label), input, hint ? h('small', null, hint) : null);
   function busy(btn, on) { if (!btn) return; btn.disabled = !!on; btn.classList.toggle('busy', !!on); }
   async function run(btn, fn) {
@@ -1905,6 +1912,135 @@
   const NETS = ['instagram', 'facebook', 'facebook_groups', 'tiktok', 'blog', 'linkedin', 'youtube', 'yelp'];
   const netName = (k) => t('net_' + (NETS.indexOf(k) >= 0 ? k : 'instagram'));
   const FORMATS = ['reel', 'carousel', 'photo', 'story', 'blog', 'email'];
+
+  /* ---------- CRONOPOST ----------
+     Un tema por día y los mismos grupos cada semana. El chulo es por
+     grupo, por día y por semana: el lunes siguiente la lista aparece
+     limpia sola, y lo de la semana pasada queda guardado. */
+  let CRW = null;   /* lunes de la semana que se está mirando */
+  let CRD = null;   /* día seleccionado, 1 a 5 */
+  async function cronopost(slot) {
+    if (!CRW) CRW = dkey(weekStart(new Date()));
+    if (!CRD) { const n = new Date().getDay(); CRD = (n >= 1 && n <= 5) ? n : 1; }
+
+    async function draw() {
+      let themes, groups, posts;
+      try {
+        const r = await Promise.all([API.postThemes(), API.fbGroups(), API.groupPosts(CRW)]);
+        themes = r[0]; groups = r[1].filter((g) => g.active); posts = r[2];
+      } catch (e) { fill(slot, empty(t('err_generic'), errText(e))); return; }
+
+      const th = themes.find((x) => x.day === CRD) || { title: '', hint: '' };
+      const donePairs = {}; posts.forEach((p) => { donePairs[p.group_id + '|' + p.day] = p; });
+      const isDone = (g, day) => !!donePairs[g.id + '|' + day];
+      const doneToday = groups.filter((g) => isDone(g, CRD)).length;
+      const weekDone = posts.length, weekTotal = groups.length * 5;
+
+      function groupEditor(g) {
+        const f = {
+          name: h('input', { required: true, value: g.name || '' }),
+          url: h('input', { type: 'url', required: true, placeholder: 'https://www.facebook.com/groups/…', value: g.url || '' }),
+          zone: h('input', { value: g.zone || '', placeholder: t('cr_zone_ph') }),
+          notes: h('input', { value: g.notes || '', placeholder: t('cr_rules_ph') }),
+        };
+        const save = h('button', { class: 'btn', type: 'submit' }, t('save'));
+        const m = modal(g.id ? t('cr_edit_g') : t('cr_add_g'),
+          h('form', { class: 'mb frm', onsubmit: (e) => { e.preventDefault(); run(save, async () => {
+            await API.saveFbGroup({ id: g.id, name: f.name.value.trim(), url: f.url.value.trim(),
+              zone: f.zone.value.trim(), notes: f.notes.value.trim(), active: true,
+              sort: g.sort != null ? g.sort : (groups.length + 1) * 10 });
+            m.close(); toast(t('saved')); draw();
+          }); } },
+            field(t('cr_g_name'), f.name),
+            field(t('cr_g_url'), f.url),
+            h('div', { class: 'two' }, field(t('cr_g_zone'), f.zone), field(t('cr_g_rules'), f.notes)),
+            h('div', { class: 'acts' },
+              g.id ? h('button', { class: 'btn ghost danger-t', type: 'button', onclick: async () => {
+                if (await askConfirm(t('cr_del_g_q', { n: g.name }))) { await API.deleteFbGroup(g.id); m.close(); draw(); }
+              } }, t('delete')) : null,
+              save)));
+      }
+
+      function themeEditor() {
+        const f = {
+          title: h('input', { required: true, value: th.title || '' }),
+          title_en: h('input', { value: th.title_en || '' }),
+          hint: h('textarea', { rows: 3 }, th.hint || ''),
+        };
+        const save = h('button', { class: 'btn', type: 'submit' }, t('save'));
+        const m = modal(t('cr_theme') + ' · ' + t('dow_' + CRD),
+          h('form', { class: 'mb frm', onsubmit: (e) => { e.preventDefault(); run(save, async () => {
+            await API.saveTheme({ day: CRD, title: f.title.value.trim(),
+              title_en: f.title_en.value.trim(), hint: f.hint.value.trim() });
+            m.close(); toast(t('saved')); draw();
+          }); } },
+            field(t('cr_theme'), f.title),
+            field(t('cr_theme_en'), f.title_en),
+            field(t('cr_hint'), f.hint),
+            h('div', { class: 'acts' }, save)));
+      }
+
+      const chips = [1, 2, 3, 4, 5].map((n) => {
+        const tn = themes.find((x) => x.day === n);
+        const got = groups.filter((g) => isDone(g, n)).length;
+        return h('button', { type: 'button', class: 'fchip' + (CRD === n ? ' on' : '') + (groups.length && got === groups.length ? ' ok' : ''),
+          onclick: () => { CRD = n; draw(); } },
+          h('b', null, t('dow_' + n)), ' ', (tn ? L(tn, 'title') : ''),
+          groups.length ? h('span', { class: 'cnt' }, got + '/' + groups.length) : null);
+      });
+
+      const row = (g) => {
+        const done = isDone(g, CRD);
+        return h('div', { class: 'ckrow' + (done ? ' done' : '') },
+          h('button', { class: 'tick', type: 'button', 'aria-label': t('cr_mark', { n: g.name }),
+            onclick: async (e) => run(e.currentTarget, async () => {
+              await API.markGroupPost(g.id, CRW, CRD, !done); draw();
+            }) }, ico('check', 15)),
+          h('div', { class: 'tx' },
+            h('b', null, g.name),
+            h('small', null, [g.zone, g.notes].filter(Boolean).join(' · ') || t('cr_norules'))),
+          g.url ? h('a', { class: 'btn ghost sm', href: g.url, target: '_blank', rel: 'noopener noreferrer' },
+            t('cr_open')) : null,
+          isStaff() ? h('button', { class: 'ib', type: 'button', 'aria-label': t('edit'),
+            onclick: () => groupEditor(g) }, ico('edit', 16)) : null);
+      };
+
+      const pct = weekTotal ? Math.round((weekDone / weekTotal) * 100) : 0;
+
+      fill(slot, h('div', { class: 'card' },
+        h('div', { class: 'row between wrap' },
+          h('h3', null, t('cr_h')),
+          h('div', { class: 'nav2' },
+            h('button', { class: 'ib', type: 'button', 'aria-label': t('prev'),
+              onclick: () => { CRW = dkey(addDays(new Date(CRW + 'T12:00:00'), -7)); draw(); } }, ico('back', 18)),
+            h('b', null, fDate(CRW + 'T12:00:00', { month: 'short', day: 'numeric' })),
+            h('button', { class: 'ib flip', type: 'button', 'aria-label': t('next'),
+              onclick: () => { CRW = dkey(addDays(new Date(CRW + 'T12:00:00'), 7)); draw(); } }, ico('back', 18)),
+            h('button', { class: 'lnk', type: 'button',
+              onclick: () => { CRW = dkey(weekStart(new Date())); draw(); } }, t('this_week')))),
+
+        h('div', { class: 'fchips' }, chips),
+
+        h('div', { class: 'thbox' },
+          h('b', null, L(th, 'title')),
+          isStaff() ? h('button', { class: 'ib', type: 'button', 'aria-label': t('edit'),
+            onclick: themeEditor }, ico('edit', 15)) : null,
+          th.hint ? h('p', { class: 'mut sm' }, th.hint) : null),
+
+        h('div', { class: 'dbar', role: 'img', 'aria-label': t('cr_week_pct', { n: pct }) },
+          h('span', { style: 'width:' + pct + '%' })),
+        h('p', { class: 'mut small' }, t('cr_today', { a: doneToday, b: groups.length })
+          + ' · ' + t('cr_week', { a: weekDone, b: weekTotal })),
+
+        groups.length ? h('div', { class: 'cklist' }, groups.map(row))
+          : empty(t('cr_nogroups'), t('cr_nogroups_sub')),
+
+        isStaff() ? h('div', { class: 'acts' }, h('button', { class: 'btn ghost sm', type: 'button',
+          onclick: () => groupEditor({}) }, ico('plus', 16), t('cr_add_g'))) : null));
+    }
+    draw();
+  }
+
   async function viewContent(main) {
     const [posts, targets] = await Promise.all([API.posts(), API.netTargets().catch(() => ({}))]);
     const today = dkey(new Date()); const wStart = dkey(weekStart(new Date())); const wEnd = dkey(addDays(weekStart(new Date()), 7));
@@ -1931,6 +2067,7 @@
         h('button', { class: 'ib', type: 'button', 'aria-label': t('edit'), onclick: () => postEditor(p) }, ico('edit', 16)));
     };
     fill(main, secH(t('content_h'), h('button', { class: 'btn sm', type: 'button', onclick: () => postEditor(null) }, ico('plus', 16), t('new_post'))),
+      h('div', { id: 'cronoslot' }),
       h('div', { class: 'stats' },
         h('div', { class: 'stat ' + (pend.length ? 'warn' : '') }, h('span', null, t('pending_posts')), h('b', null, pend.length)),
         h('div', { class: 'stat' }, h('span', null, t('this_week_label')), h('b', null, postedW.length)),
@@ -1961,6 +2098,7 @@
       thisWeek.length ? h('div', { class: 'cklist' }, thisWeek.map(row)) : empty(t('no_posts')),
       later.length ? h('h3', { class: 'sub' }, t('later')) : null, later.length ? h('div', { class: 'cklist' }, later.map(row)) : null,
       done.length ? h('h3', { class: 'sub' }, t('done_label')) : null, done.length ? h('div', { class: 'cklist' }, done.slice(0, 20).map(row)) : null);
+    const cs = main.querySelector('#cronoslot'); if (cs) cronopost(cs);
   }
   function targetsEditor(cur) {
     const ins = {};

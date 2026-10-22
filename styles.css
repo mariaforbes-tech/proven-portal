@@ -461,3 +461,11 @@ main{max-width:var(--max);margin:0 auto;padding:18px 16px 70px;width:100%;flex:1
   background:linear-gradient(90deg,var(--gold) 0%,#2E7D53 100%);transition:width .4s ease}
 .card.lrow.slim.done{opacity:.6}
 details.more>summary{cursor:pointer;font-size:.86rem;color:var(--mut);font-weight:700;padding:6px 0}
+
+/* --- cronopost --- */
+.thbox{background:#FBFAF7;border:1px solid var(--hair);border-radius:var(--r2);padding:12px 14px;
+  display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:4px 0 2px}
+.thbox>b{font-size:1.02rem}
+.thbox>p{flex-basis:100%;margin:0}
+.fchip.ok{border-color:var(--ok);color:var(--ok)}
+.fchip b{font-weight:800;margin-right:4px}

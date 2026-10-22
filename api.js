@@ -120,6 +120,24 @@
       deleteSelection: (id) => q(sb.from('selections').delete().eq('id', id)),
       /* --- plata abierta: lo que deben y lo que se debe --- */
       projectClients: () => q(sb.from('project_clients').select('*')),
+      /* --- cronopost: grupos de Facebook --- */
+      postThemes: () => q(sb.from('post_themes').select('*').order('day')),
+      fbGroups: () => q(sb.from('fb_groups').select('*').order('sort')),
+      groupPosts: (wk) => q(sb.from('group_posts').select('*').eq('week_start', wk)),
+      saveFbGroup(g) {
+        const row = { ...g };
+        if (row.id) { const id = row.id; delete row.id; return q(sb.from('fb_groups').update(row).eq('id', id)); }
+        return q(sb.from('fb_groups').insert(row));
+      },
+      deleteFbGroup: (id) => q(sb.from('fb_groups').delete().eq('id', id)),
+      /* El chulo: si se prende se guarda la fila, si se apaga se borra.
+         posted_by lo pone la base sola con auth.uid(). */
+      markGroupPost(groupId, wk, day, on) {
+        if (!on) return q(sb.from('group_posts').delete()
+          .eq('group_id', groupId).eq('week_start', wk).eq('day', day));
+        return q(sb.from('group_posts').insert({ group_id: groupId, week_start: wk, day: day }));
+      },
+      saveTheme: (t) => q(sb.from('post_themes').update({ title: t.title, title_en: t.title_en, hint: t.hint }).eq('day', t.day)),
       /* --- deuda con trabajadores --- */
       workerDebts: () => q(sb.from('worker_debts').select('*').order('sort')),
       debtBaseline: () => q(sb.from('debt_baseline').select('*').eq('id', 1)),
@@ -287,7 +305,7 @@
       const scope = [], checks = [], materials = [], selections = [], fixed = [];
       const targets = { instagram: 4, facebook: 4, facebook_groups: 7, tiktok: 4, blog: 2, linkedin: 2, youtube: 4, yelp: 2 };
       return { session: null, targets, profiles, projects, members, messages, entries, shifts, claims: [],
-        reqs, docs, payments, expenses, posts, leads, scope, checks, materials, selections, options: [], cpays: [], pays: [], pclients: [], debts: [], base: null, fixed, files: {},
+        reqs, docs, payments, expenses, posts, leads, scope, checks, materials, selections, options: [], cpays: [], pays: [], pclients: [], debts: [], base: null, themes: [], fbg: [], gposts: [], fixed, files: {},
         defaults: { crew: { projects: true, clock: true, shifts: false, docs: true, pay: true }, gigs: { projects: true, clock: true, shifts: true, docs: true, pay: true } } };
     }
     let DB;
@@ -411,6 +429,29 @@
       async deleteSelection(id) { need(staff()); DB.selections = DB.selections.filter((x) => x.id !== id); save(); },
       /* En modo de prueba no hay saldos cargados: devuelve vacío, no inventa. */
       async projectClients() { need(staff()); return wait(DB.pclients || []); },
+      async postThemes() { return wait(DB.themes || []); },
+      async fbGroups() { return wait((DB.fbg || []).slice().sort((a, b) => (a.sort || 0) - (b.sort || 0))); },
+      async groupPosts(wk) { return wait((DB.gposts || []).filter((x) => x.week_start === wk)); },
+      async saveFbGroup(g) {
+        need(staff()); DB.fbg = DB.fbg || [];
+        if (g.id) Object.assign(DB.fbg.find((x) => x.id === g.id), g);
+        else DB.fbg.push({ ...g, id: uid(), created_at: new Date().toISOString() });
+        save();
+      },
+      async deleteFbGroup(id) { need(staff()); DB.fbg = (DB.fbg || []).filter((x) => x.id !== id); save(); },
+      async markGroupPost(groupId, wk, day, on) {
+        need(staff()); DB.gposts = DB.gposts || [];
+        DB.gposts = DB.gposts.filter((x) => !(x.group_id === groupId && x.week_start === wk && x.day === day));
+        if (on) DB.gposts.push({ id: uid(), group_id: groupId, week_start: wk, day: day,
+          posted_on: new Date().toISOString().slice(0, 10), link: '' });
+        save();
+      },
+      async saveTheme(t) {
+        need(staff()); DB.themes = DB.themes || [];
+        const f = DB.themes.find((x) => x.day === t.day);
+        if (f) Object.assign(f, t); else DB.themes.push({ ...t });
+        save();
+      },
       async workerDebts() { need(viewer()); return wait(DB.debts || []); },
       async debtBaseline() { need(viewer()); return wait(DB.base ? [DB.base] : []); },
       async saveWorkerDebt(r) {
