@@ -290,7 +290,7 @@ main{max-width:var(--max);margin:0 auto;padding:18px 16px 70px;width:100%;flex:1
 
 /* ---------- centro de mando ---------- */
 .matrix{padding:0;overflow-x:auto}
-.mx{display:grid;grid-template-columns:minmax(185px,1.6fr) repeat(8,minmax(70px,1fr));align-items:center;gap:4px;padding:10px 14px;border-bottom:1px solid #EFEDE6}
+.mx{display:grid;grid-template-columns:minmax(185px,1.6fr) repeat(var(--mxc,8),minmax(70px,1fr));align-items:center;gap:4px;padding:10px 14px;border-bottom:1px solid #EFEDE6}
 .mx:last-child{border-bottom:0}
 .mx.head{background:#FBFAF7;font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);font-weight:800;position:sticky;top:0}
 .mx.head span{text-align:center} .mx.head .c0{text-align:left}

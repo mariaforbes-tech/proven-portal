@@ -1404,10 +1404,13 @@
           h('button', { class: 'btn ghost sm danger-t', type: 'button', onclick: async () => { if (await askConfirm(t('reject_q', { n: p.full_name }), t('reject'))) { await API.updateProfile(p.id, { status: 'rejected' }); refresh(); } } }, t('reject'))));
     }) : empty(t('no_requests')));
     /* matriz de accesos */
-    const head = h('div', { class: 'mx head' }, h('span', { class: 'c0' }, t('person')), h('span', null, t('active')), MODS.map((k) => h('span', null, t('mod_' + k))), h('span', null, t('office')), h('span', null, t('finance')));
+    /* El numero de columnas sale de MODS: si manana se agrega otro modulo,
+       la tabla se ajusta sola en vez de romperse. */
+    const mxc = { style: '--mxc:' + (MODS.length + 3) };
+    const head = h('div', Object.assign({ class: 'mx head' }, mxc), h('span', { class: 'c0' }, t('person')), h('span', null, t('active')), MODS.map((k) => h('span', null, t('mod_' + k))), h('span', null, t('office')), h('span', null, t('finance')));
     const rows = team.map((p) => {
       const setPerm = (k, v) => { const perms = Object.assign({}, p.perms); perms[k] = v; p.perms = perms; return API.updateProfile(p.id, { perms }).catch((e) => { toast(errText(e), true); refresh(); }); };
-      return h('div', { class: 'mx row' + (p.status === 'disabled' ? ' off' : '') },
+      return h('div', Object.assign({ class: 'mx row' + (p.status === 'disabled' ? ' off' : '') }, mxc),
         h('span', { class: 'c0' }, h('span', { class: 'av sm' }, ini(p.full_name)), h('span', null, h('b', null, p.full_name), h('small', null, t('grp_short_' + p.grp) + (p.phone ? ' · ' + p.phone : '')))),
         h('span', { 'data-l': t('active') }, switchEl(p.status === 'approved', (v) => API.updateProfile(p.id, { status: v ? 'approved' : 'disabled' }).then(refresh).catch((e) => { toast(errText(e), true); refresh(); }), t('active') + ' ' + p.full_name)),
         MODS.map((k) => h('span', { 'data-l': t('mod_' + k) }, switchEl(p.perms && p.perms[k], (v) => setPerm(k, v), t('mod_' + k) + ' ' + p.full_name))),
