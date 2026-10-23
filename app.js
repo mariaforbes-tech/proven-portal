@@ -659,9 +659,9 @@
             await API.setScopeStatus(s.id, s.status === 'done' ? 'pending' : 'done', s.status === 'done' ? null : tkey);
             scopePane(box, p, names, myRole, go);
           }) }, ico('check', 15)),
-        h('div', { class: 'tx' }, h('b', null, s.title),
+        h('div', { class: 'tx' }, h('b', null, L(s, 'title')),
           h('small', null, s.due_on ? h('span', { class: late ? 'pill late' : '' }, fDate(s.due_on + 'T12:00:00', { weekday: 'short', month: 'short', day: 'numeric' })) : null,
-            s.notes ? h('span', null, s.notes) : null)),
+            L(s, 'notes') ? h('span', null, L(s, 'notes')) : null)),
         isStaff() ? h('button', { class: 'ib', type: 'button', 'aria-label': t('edit'),
           onclick: () => taskEditor(s, pid, () => scopePane(box, p, names, myRole, go)) }, ico('edit', 15)) : null);
     };
@@ -682,7 +682,7 @@
       }
       return h('div', { class: 'srow s-' + s.status + (late ? ' late' : '') },
         h('span', { class: 'sdot' }),
-        h('div', { class: 'sx' }, h('b', null, s.title),
+        h('div', { class: 'sx' }, h('b', null, L(s, 'title')),
           h('small', null, [s.trade, s.due_on ? fDate(s.due_on + 'T12:00:00', { month: 'short', day: 'numeric' }) : ''].filter(Boolean).join(' · ')),
           h('div', { class: 'row gap' }, chip(t('si_' + s.status), s.status === 'done' ? 'ok' : s.status === 'active' ? 'gold' : s.status === 'blocked' ? 'bad' : 'mut'), tail)),
         h('div', { class: 'sact' },
