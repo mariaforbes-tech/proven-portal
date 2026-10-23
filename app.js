@@ -893,8 +893,12 @@
           ? h('img', { class: 'othumb', src: safeUrl(urls[o.photo_path]), alt: '' })
           : h('div', { class: 'othumb none' }),
         h('div', { class: 'tx' }, h('b', null, o.title),
-          h('small', null, [o.title_en, o.extra, o.note, o.price != null ? money(o.price) : '',
-            o.link ? t('opts_haslink') : ''].filter(Boolean).join(' · ')),
+          h('small', null, [o.title_en, o.extra, o.note, o.price != null ? money(o.price) : ''
+            ].filter(Boolean).join(' · ')),
+          /* El link se abre desde aqui. Antes solo decia "con link", que no
+             sirve de nada cuando lo que uno necesita es ver la opcion. */
+          o.link ? h('a', { class: 'lnk sm', href: safeUrl(o.link), target: '_blank',
+            rel: 'noopener noreferrer' }, t('opts_open')) : null,
           o.from_client ? chip(t('opts_fromclient'), 'gold') : null,
           sel.chosen_option_id === o.id ? chip(t('opts_chosen'), 'ok') : null),
         h('button', { class: 'ib', type: 'button', 'aria-label': t('edit'),
