@@ -237,9 +237,13 @@
   /* ---------- estructura principal ---------- */
   function tabsFor() {
     if (isAdmin()) return ['cmd', 'projects', 'attendance', 'finance', 'crm', 'content', 'receipts', 'shifts', 'docs', 'pay'];
-    if (S.me.is_office) return ['projects', 'attendance', 'content', 'receipts', 'finance', 'shifts', 'docs'];
-    if (S.me.is_finance) return ['finance', 'receipts', 'projects', 'attendance'];
-    return ['projects', 'clock', 'shifts', 'docs', 'pay'].filter((k) => S.me.perms && S.me.perms[k]);
+    /* Contenido es su propio interruptor, no viene pegado a Oficina ni a
+       Finanzas: quien publica no tiene por que ver los numeros. */
+    const can = S.me.perms || {};
+    const cont = can.content ? ['content'] : [];
+    if (S.me.is_office) return ['projects', 'attendance'].concat(cont, ['receipts', 'finance', 'shifts', 'docs']);
+    if (S.me.is_finance) return ['finance', 'receipts', 'projects', 'attendance'].concat(cont);
+    return ['projects', 'clock', 'shifts', 'docs', 'pay'].filter((k) => can[k]).concat(cont);
   }
   function shell() {
     const tabs = tabsFor();
@@ -1381,7 +1385,7 @@
   }
 
   /* ============================ CENTRO DE MANDO (admin) ============================ */
-  const MODS = ['projects', 'clock', 'shifts', 'docs', 'pay'];
+  const MODS = ['projects', 'clock', 'shifts', 'docs', 'pay', 'content'];
   async function viewCmd(main) {
     const [people, defaults, docs, reqs, open, pcl, projs] = await Promise.all([API.profiles(), API.groupDefaults(), API.docs(), API.requirements(), API.openEntries(), API.projectClients().catch(() => []), API.projects().catch(() => [])]);
     /* Un cliente entró por la puerta del cliente: no es de la cuadrilla, no se le
