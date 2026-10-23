@@ -480,3 +480,7 @@ details.more>summary{cursor:pointer;font-size:.86rem;color:var(--mut);font-weigh
 .angbox>b{font-size:1.06rem}
 .angbox select{font:inherit;padding:6px 9px;border:1px solid var(--hair);border-radius:9px;background:#fff}
 .angbox>p{flex-basis:100%;margin:0}
+
+/* --- imagen del dia dentro de la publicacion --- */
+.postimg{margin:0 0 12px;display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+.postimg img{width:100%;max-width:280px;border-radius:var(--r2);border:1px solid var(--hair);display:block}

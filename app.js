@@ -1989,6 +1989,15 @@
           box.value = ((g.prefix || '').trim() ? (g.prefix || '').trim() + '\n\n' : '') + r.body;
           toast(t('cr_prev_ok'));
         });
+        /* La imagen del dia sale del angulo y del dia, asi que el nombre del
+           archivo basta: no hay nada que guardar en la base. Si el archivo no
+           existe todavia, el bloque se esconde solo. */
+        const furl = ang ? 'fondos/a' + ang.id + '-d' + CRD + '.jpg' : '';
+        const pic = furl ? h('img', { src: furl, alt: '', loading: 'lazy' }) : null;
+        const imgbox = pic ? h('div', { class: 'postimg' }, pic,
+          h('a', { class: 'btn ghost sm', href: furl,
+            download: 'proven-' + CRW + '-dia' + CRD + '.jpg' }, t('cr_img_dl'))) : null;
+        if (pic) pic.onerror = () => { if (imgbox) imgbox.remove(); };
         const save = isStaff() ? h('button', { class: 'btn ghost', type: 'button' }, t('cr_save_copy')) : null;
         if (save) save.onclick = () => run(save, async () => {
           /* El prefijo del grupo no se guarda dentro del texto común: se le
@@ -2003,6 +2012,7 @@
           h('p', { class: 'mut sm' }, t('cr_aud_' + c.aud) + ' · ' + L(th, 'title')
             + (ang ? ' · ' + L(ang, 'title') : '')),
           c.hasBody ? null : h('p', { class: 'mut sm' }, t('cr_nocopy')),
+          imgbox,
           box,
           g.notes ? h('p', { class: 'mut sm warnline' }, g.notes) : null,
           h('div', { class: 'acts' }, prev, save, cp)), { wide: true });
