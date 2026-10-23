@@ -237,7 +237,7 @@
   /* ---------- estructura principal ---------- */
   function tabsFor() {
     if (isAdmin()) return ['cmd', 'projects', 'attendance', 'finance', 'crm', 'content', 'receipts', 'shifts', 'docs', 'pay'];
-    if (S.me.is_office) return ['projects', 'attendance', 'receipts', 'finance', 'shifts', 'docs'];
+    if (S.me.is_office) return ['projects', 'attendance', 'content', 'receipts', 'finance', 'shifts', 'docs'];
     if (S.me.is_finance) return ['finance', 'receipts', 'projects', 'attendance'];
     return ['projects', 'clock', 'shifts', 'docs', 'pay'].filter((k) => S.me.perms && S.me.perms[k]);
   }
