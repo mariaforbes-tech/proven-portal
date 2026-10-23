@@ -508,7 +508,7 @@
       const out = pys.reduce((a, x) => a + Math.max(0, Number(x.amount || 0) - Number(x.paid || 0)), 0);
 
       const inRow = (x) => h('div', { class: 'ckrow sel' + (x.paid_on ? ' set' : '') },
-        h('div', { class: 'tx' }, h('b', null, x.label),
+        h('div', { class: 'tx' }, h('b', null, L(x, 'label')),
           h('small', null, x.paid_on ? t('mny_on', { d: fDate(x.paid_on + 'T12:00:00', { month: 'short', day: 'numeric' }) })
             : x.due_on ? t('mny_by', { d: fDate(x.due_on + 'T12:00:00', { month: 'short', day: 'numeric' }) })
             : t('mny_nodate'))),
@@ -636,7 +636,7 @@
         h('button', { class: 'tick', type: 'button', 'aria-pressed': on ? 'true' : 'false', 'aria-label': s.title, onclick: (e) => run(e.currentTarget, async () => {
           if (on) await API.removeCheck(s.id, per); else await API.addCheck(s.id, per); scopePane(box, p, names, myRole, go);
         }) }, ico('check', 15)),
-        h('div', { class: 'tx' }, h('b', null, s.title), on && who && names[who] ? h('small', null, t('checked_by', { n: names[who] })) : null));
+        h('div', { class: 'tx' }, h('b', null, L(s, 'title')), on && who && names[who] ? h('small', null, t('checked_by', { n: names[who] })) : null));
     };
     const daily = recur.filter((s) => s.cadence === 'daily');
     const weekly = recur.filter((s) => s.cadence === 'weekly');
@@ -846,13 +846,13 @@
     const row = (x) => {
       const cls = x.status === 'pending' ? 'warn' : x.status === 'ordered' ? 'ok' : 'gold';
       const over = x.allowance != null && x.actual_cost != null && Number(x.actual_cost) > Number(x.allowance);
-      const bits = [x.room,
+      const bits = [L(x, 'room'),
         x.install_on ? t('sel_installs', { d: fDate(x.install_on + 'T12:00:00', { month: 'short', day: 'numeric' }) }) : '',
         x.allowance != null ? (x.actual_cost != null ? money(x.allowance) + ' → ' + money(x.actual_cost) : money(x.allowance)) : '',
         x.choice].filter(Boolean);
       return h('div', { class: 'ckrow sel' + (x.status === 'pending' ? '' : ' set') },
         chip(t('ss_' + x.status), cls),
-        h('div', { class: 'tx' }, h('b', null, x.title),
+        h('div', { class: 'tx' }, h('b', null, L(x, 'title')),
           h('small', null, bits.join(' · '),
             over ? chip(t('sel_over', { m: money(Number(x.actual_cost) - Number(x.allowance)) }), 'bad') : null)),
         isStaff() ? h('button', { class: 'btn ghost sm', type: 'button',
@@ -880,7 +880,7 @@
      Aquí se le arman: foto, link y precio. Sin esto el cliente escribe a ciegas. */
   async function optionsManager(sel, pid, done) {
     const body = h('div', { class: 'mb' }, spin());
-    const mo = modal(t('opts_h') + ' · ' + sel.title, body, { wide: true });
+    const mo = modal(t('opts_h') + ' · ' + L(sel, 'title'), body, { wide: true });
 
     async function draw() {
       let list;
@@ -892,7 +892,7 @@
         o.photo_path && urls[o.photo_path]
           ? h('img', { class: 'othumb', src: safeUrl(urls[o.photo_path]), alt: '' })
           : h('div', { class: 'othumb none' }),
-        h('div', { class: 'tx' }, h('b', null, o.title),
+        h('div', { class: 'tx' }, h('b', null, L(o, 'title')),
           h('small', null, [o.title_en, o.extra, o.note, o.price != null ? money(o.price) : ''
             ].filter(Boolean).join(' · ')),
           /* El link se abre desde aqui. Antes solo decia "con link", que no
@@ -1494,7 +1494,7 @@
           h('small', null, (pm[next.project_id] ? pm[next.project_id].name + ' · ' : '')
             + fDate(next.due_on + 'T12:00:00', { month: 'short', day: 'numeric' }))) : null),
       inR.length ? h('div', { class: 'list' }, inR.map((x) => h('div', { class: 'card lrow slim' },
-        h('div', null, h('b', null, x.label + ' · ' + money(x.amount)),
+        h('div', null, h('b', null, L(x, 'label') + ' · ' + money(x.amount)),
           h('small', null, [pm[x.project_id] ? pm[x.project_id].name : '',
             fDate(x.paid_on + 'T12:00:00', { month: 'short', day: 'numeric' })].filter(Boolean).join(' · '))))))
         : h('p', { class: 'mut small' }, t('fin_in_none'))));
