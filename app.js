@@ -778,7 +778,7 @@
     const row = (m) => h('div', { class: 'ckrow' + (m.bought ? ' done' : '') },
       h('button', { class: 'tick', type: 'button', 'aria-pressed': m.bought ? 'true' : 'false', 'aria-label': t('mark_bought'), onclick: (e) => run(e.currentTarget, async () => {
         await API.setBought(m.id, !m.bought); materialsPane(box, p, names, canAdd); }) }, ico('check', 15)),
-      h('div', { class: 'tx' }, h('b', null, m.title),
+      h('div', { class: 'tx' }, h('b', null, L(m, 'title')),
         h('small', null, [m.qty, m.vendor, m.est_cost ? money(m.est_cost) : '', m.needed_by ? fDate(m.needed_by + 'T12:00:00', { month: 'short', day: 'numeric' }) : '',
           m.bought && m.bought_by ? t('bought_by_on', { n: names[m.bought_by] || '—', d: fDate(m.bought_on + 'T12:00:00', { month: 'short', day: 'numeric' }) }) : ''].filter(Boolean).join(' · '))),
       isStaff() ? h('button', { class: 'ib', type: 'button', 'aria-label': t('edit'), onclick: () => materialEditor(m, p.id, () => materialsPane(box, p, names, canAdd)) }, ico('edit', 15)) : null);
