@@ -763,7 +763,7 @@
       m.close(); toast(t('saved')); done(); }); } },
       field(kind === 'todo' ? t('todo_title') : t('task_title'), f.title),
       kind === 'todo' ? null : h('div', { class: 'two' }, field(t('trade'), f.trade), field(t('cadence'), f.cadence)),
-      h('div', { class: 'two' }, dueF, wF), field(t('notes'), f.notes), field('Orden', f.sort),
+      h('div', { class: 'two' }, dueF, wF), field(t('notes'), f.notes), field(t('order_lbl'), f.sort),
       h('div', { class: 'acts' }, s ? h('button', { class: 'btn ghost danger-t', type: 'button', onclick: async () => { if (await askConfirm(t('del_task_q'))) { await API.deleteScopeItem(s.id); m.close(); done(); } } }, t('delete')) : null, save)));
   }
 
@@ -793,7 +793,7 @@
       done.length ? h('div', { class: 'cklist' }, done.map(row)) : null);
   }
   function materialEditor(m, pid, done) {
-    const f = { title: h('input', { required: true, value: m ? m.title : '' }), qty: h('input', { value: m ? m.qty : '', placeholder: '2 cajas, 14 láminas…' }),
+    const f = { title: h('input', { required: true, value: m ? m.title : '' }), qty: h('input', { value: m ? m.qty : '', placeholder: t('mat_qty_ph') }),
       vendor: h('input', { value: m ? m.vendor : '', placeholder: t('vendor_ph') }), needed: h('input', { type: 'date', value: m && m.needed_by ? m.needed_by : '' }),
       cost: h('input', { type: 'number', step: '0.01', min: '0', inputmode: 'decimal', value: m && m.est_cost != null ? m.est_cost : '' }) };
     const save = h('button', { class: 'btn', type: 'submit' }, t('save'));
@@ -954,7 +954,7 @@
   function selectionEditor(x, pid, done) {
     const f = {
       title: h('input', { required: true, value: x ? x.title : '' }),
-      room: h('input', { value: x ? x.room : '', placeholder: 'Cocina, Baño, Closets…' }),
+      room: h('input', { value: x ? x.room : '', placeholder: t('sel_room_ph') }),
       status: h('select', { value: x ? x.status : 'pending' },
         ['pending', 'chosen', 'ordered'].map((k) => h('option', { value: k }, t('ss_' + k)))),
       due: h('input', { type: 'date', value: x && x.due_on ? x.due_on : '' }),
@@ -1287,7 +1287,7 @@
   }
   function shiftEditor(s) {
     const f = { title: h('input', { required: true, value: s ? s.title : '' }), address: h('input', { value: s ? s.address : '' }), starts: h('input', { type: 'datetime-local', value: s ? toLocalInput(s.starts_at) : '' }),
-      hours: h('input', { type: 'number', step: '0.5', min: '0', value: s && s.hours != null ? s.hours : 8 }), rate: h('input', { value: s ? s.rate : '', placeholder: '$150 / día' }), spots: h('input', { type: 'number', min: '1', required: true, value: s ? s.spots : 1 }), notes: h('textarea', { rows: 3 }, s ? s.notes : '') };
+      hours: h('input', { type: 'number', step: '0.5', min: '0', value: s && s.hours != null ? s.hours : 8 }), rate: h('input', { value: s ? s.rate : '', placeholder: t('rate_ph') }), spots: h('input', { type: 'number', min: '1', required: true, value: s ? s.spots : 1 }), notes: h('textarea', { rows: 3 }, s ? s.notes : '') };
     f.notes.value = s ? s.notes : ''; const save = h('button', { class: 'btn', type: 'submit' }, t('save'));
     const m = modal(s ? t('edit_shift') : t('post_shift'), h('form', { class: 'mb frm', onsubmit: async (e) => {
       e.preventDefault(); await run(save, async () => { await API.saveShift({ id: s && s.id, title: f.title.value.trim(), address: f.address.value.trim(), starts_at: fromLocalInput(f.starts.value), hours: f.hours.value ? Number(f.hours.value) : null, rate: f.rate.value.trim(), spots: Number(f.spots.value) || 1, notes: f.notes.value.trim(), status: s ? s.status : 'open' }); m.close(); toast(t('saved')); refresh(); });
