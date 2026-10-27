@@ -407,6 +407,7 @@
   };
 
   /* ================= LA PANTALLA ================= */
+  var P;   /* window.PS: los ayudantes del portal */
   var h, fill, modal, toast, run, money, field, ico, empty, t, sb;
   function bind() {
     P = window.PS;
