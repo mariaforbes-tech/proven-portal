@@ -68,20 +68,40 @@
     this.d.addPage(); this.page++; this.y = M;
   };
 
-  /* Encabezado del documento: logo centrado, título y subtítulo. */
-  Sheet.prototype.head = function (title, sub) {
+  /* Encabezado: logo y datos de la empresa a la izquierda, tipo de
+     documento, número y fechas a la derecha, como una factura normal. */
+  Sheet.prototype.head = function (kind, number, rows, sub) {
+    var top = this.y, lw = 118, hgt = 0;
     if (this.img) {
-      var w = 132, r = this.img.height / this.img.width;
-      this.d.addImage(this.img, 'PNG', (W - w) / 2, this.y, w, w * r);
-      this.y += w * r + 16;
+      var r = this.img.height / this.img.width;
+      hgt = lw * r;
+      this.d.addImage(this.img, 'PNG', M, top, lw, hgt);
     }
-    this.font(20, true).d.text(title, W / 2, this.y, { align: 'center' });
-    this.y += 16;
+    var ly = top + hgt + (hgt ? 12 : 0);
+    this.font(9.5, true).d.text('Proven Solutions USA LLC', M, ly + 8);
+    this.font(8.5, false, GREY);
+    this.d.text('(203) 249-0981', M, ly + 20);
+    this.d.text('provensolutionseastcoast.com', M, ly + 31);
+    var leftEnd = ly + 31;
+
+    var rx = W - M;
+    this.font(22, true).d.text(kind, rx, top + 20, { align: 'right' });
+    this.font(13, true, GOLD).d.text('#' + number, rx, top + 38, { align: 'right' });
+    var ry = top + 58;
+    (rows || []).forEach(function (r) {
+      this.font(7, true, GREY).d.text(String(r[0]).toUpperCase(), rx, ry, { align: 'right' });
+      this.font(9.5, false, NAVY).d.text(String(r[1] || '—'), rx, ry + 11, { align: 'right' });
+      ry += 25;
+    }, this);
+
+    this.y = Math.max(leftEnd, ry) + 14;
+    this.rule(true);
+    this.y += 6;
     if (sub) {
-      this.font(9, false, GREY).d.text(sub, W / 2, this.y, { align: 'center' });
-      this.y += 12;
+      this.font(8.5, false, GREY).d.text(sub, M, this.y + 4);
+      this.y += 14;
     }
-    this.rule(); this.y += 16;
+    this.y += 10;
     return this;
   };
 
@@ -231,16 +251,17 @@
     var s = new Sheet(d, img);
     var m = function (n) { return '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
 
-    s.head('INVOICE #' + v.number,
-      'Proven Solutions USA LLC  —  issued under the signed Services Agreement');
+    s.head('INVOICE', v.number,
+      [['Invoice date', v.date], ['Due date', v.due]],
+      'Issued under the signed Services Agreement.');
 
-    s.section(1, 'BILL TO & INVOICE DETAILS');
+    /* Las fechas ya van en el encabezado: repetirlas aquí solo da lugar a
+       que un día no coincidan. */
+    s.section(1, 'BILL TO & PROJECT');
     s.pairs([
-      [['Bill to — Client Full Legal Name', v.bill.name], ['Invoice Date', v.date]],
-      [['Client Address', v.bill.address], null],
-      [['Client Email', v.bill.email], ['Client Phone', v.bill.phone]],
-      [['Project Address', v.project.address], null],
-      [['Original Contract Date', v.project.contract_date], ['Invoice Due Date', v.due]]
+      [['Bill to — Client Full Legal Name', v.bill.name], ['Project Address', v.project.address]],
+      [['Client Address', v.bill.address], ['Original Contract Date', v.project.contract_date]],
+      [['Client Email', v.bill.email], ['Client Phone', v.bill.phone]]
     ]);
 
     s.section(2, 'THIS INVOICE IS FOR');
@@ -307,16 +328,16 @@
     var s = new Sheet(d, img);
     var m = function (n) { return '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
 
-    s.head('PAYMENT RECEIPT #' + v.number,
-      'Proven Solutions USA LLC  —  proof of payment received');
+    s.head('PAYMENT RECEIPT', v.number,
+      [['Payment received', v.received_on], ['Date issued', v.issued_on]],
+      'Proof of payment received.');
 
     s.font(10.5, true).d.text('PAYMENT RECEIVED — THANK YOU', M, s.y); s.y += 14;
     s.para('Proven Solutions USA LLC acknowledges receipt of the payment described below, applied to the signed Services Agreement identified on this receipt.', 9, false, GREY);
 
     s.section(1, 'RECEIVED FROM');
     s.pairs([
-      [['Client Full Legal Name', v.bill.name], ['Date Payment Received', v.received_on]],
-      [['Project Address', v.project.address], null],
+      [['Client Full Legal Name', v.bill.name], ['Project Address', v.project.address]],
       [['Original Contract Date', v.project.contract_date], ['Invoice # Paid (if any)', v.invoice_number]]
     ]);
 
