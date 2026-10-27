@@ -50,8 +50,8 @@
   }
 
   /* ---------- el lienzo ---------- */
-  function Sheet(d, img) {
-    this.d = d; this.img = img; this.y = M; this.page = 1;
+  function Sheet(d, img, co) {
+    this.d = d; this.img = img; this.co = co || {}; this.y = M; this.page = 1;
     d.addFileToVFS('M400.ttf', window.MONT['400']); d.addFont('M400.ttf', 'M', 'normal');
     d.addFileToVFS('M700.ttf', window.MONT['700']); d.addFont('M700.ttf', 'M', 'bold');
     d.setFont('M', 'normal');
@@ -78,12 +78,18 @@
       hgt = lw * (this.img.h / this.img.w);
       this.d.addImage(this.img.data, 'PNG', M, top, lw, hgt);
     }
-    var ly = top + hgt + (hgt ? 12 : 0);
-    this.font(9.5, true).d.text('Proven Solutions USA LLC', M, ly + 8);
+    /* Los datos de la empresa salen de la base, no del código: el
+       repositorio es público y el EIN no tiene por qué estar ahí. */
+    var co = this.co || {}, ly = top + hgt + (hgt ? 12 : 0), ty = ly + 8;
+    this.font(9.5, true).d.text(co.legal_name || 'Proven Solutions USA LLC', M, ty);
     this.font(8.5, false, GREY);
-    this.d.text('(203) 249-0981', M, ly + 20);
-    this.d.text('provensolutionseastcoast.com', M, ly + 31);
-    var leftEnd = ly + 31;
+    [co.address_1, co.address_2, co.phone, co.website,
+     co.ein ? 'EIN ' + co.ein : ''].forEach(function (line) {
+      if (!line) return;
+      ty += 11;
+      this.d.text(String(line), M, ty);
+    }, this);
+    var leftEnd = ty;
 
     var rx = W - M;
     this.font(22, true).d.text(kind, rx, top + 20, { align: 'right' });
@@ -235,8 +241,10 @@
       d.setPage(i);
       d.setFont('M', 'normal'); d.setFontSize(7.5);
       d.setTextColor(GREY[0], GREY[1], GREY[2]);
-      d.text('Proven Solutions USA LLC  |  (203) 249-0981  |  www.provensolutionseastcoast.com  |  Page '
-        + i + ' of ' + n, W / 2, H - 34, { align: 'center' });
+      var co = this.co || {};
+      d.text([co.legal_name || 'Proven Solutions USA LLC', co.phone || '(203) 249-0981',
+        co.website || 'provensolutionseastcoast.com'].join('  |  ')
+        + '  |  Page ' + i + ' of ' + n, W / 2, H - 34, { align: 'center' });
     }
     return this;
   };
@@ -253,7 +261,7 @@
 
   function buildInvoice(v, img) {
     var d = new window.jspdf.jsPDF({ unit: 'pt', format: 'letter' });
-    var s = new Sheet(d, img);
+    var s = new Sheet(d, img, v.co);
     var m = function (n) { return '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
 
     s.head('INVOICE', v.number,
@@ -330,7 +338,7 @@
 
   function buildReceipt(v, img) {
     var d = new window.jspdf.jsPDF({ unit: 'pt', format: 'letter' });
-    var s = new Sheet(d, img);
+    var s = new Sheet(d, img, v.co);
     var m = function (n) { return '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
 
     s.head('PAYMENT RECEIPT', v.number,
