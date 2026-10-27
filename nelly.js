@@ -411,7 +411,8 @@
   function bind() {
     P = window.PS;
     h = P.h; fill = P.fill; modal = P.modal; toast = P.toast; run = P.run;
-    money = P.money; field = P.field; ico = P.ico; empty = P.empty; t = P.t; sb = P.sb;
+    money = P.money; field = P.field; ico = P.ico; empty = P.empty; t = P.t;
+    sb = window.API && window.API.sb;
   }
 
   function q(p) {
@@ -461,6 +462,10 @@
 
   function view(main) {
     bind();
+    /* Si falta algo del portal, se dice cuál: una pantalla en blanco no
+       le sirve a nadie. */
+    if (!P) { document.getElementById('main').textContent = 'Nelly no encontró el portal.'; return; }
+    if (!sb) { fill(main, empty('Nelly', 'No hay conexión con la base de datos.')); return; }
     fill(main, P.h('div', { class: 'spin' }));
     Promise.all([D.company(), D.projects(), D.recent().catch(function () { return []; })])
       .then(function (r) {

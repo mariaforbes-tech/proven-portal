@@ -2264,5 +2264,5 @@
   window.PS = { h: h, fill: fill, modal: modal, toast: toast, run: run, money: money,
     field: field, chip: chip, ico: ico, empty: empty, t: t, L: L, dkey: dkey, fDate: fDate,
     API: API, S: S, isAdmin: isAdmin, isStaff: isStaff, isFinance: isFinance,
-    refresh: refresh, errText: errText, askConfirm: askConfirm, sb: sb };
+    refresh: refresh, errText: errText, askConfirm: askConfirm };
 })();

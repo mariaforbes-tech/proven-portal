@@ -607,4 +607,7 @@
 
   window.API = LIVE ? liveAPI() : demoAPI();
   window.API.shrink = shrink;
+  /* El cliente de Supabase vive aquí, no en app.js. Nelly lo necesita
+     para sus propias consultas. */
+  if (LIVE) { try { window.API.sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY); } catch (e) { /* demo */ } }
 })();
