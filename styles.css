@@ -484,3 +484,10 @@ details.more>summary{cursor:pointer;font-size:.86rem;color:var(--mut);font-weigh
 /* --- imagen del dia dentro de la publicacion --- */
 .postimg{margin:0 0 12px;display:flex;flex-direction:column;gap:8px;align-items:flex-start}
 .postimg img{width:100%;max-width:280px;border-radius:var(--r2);border:1px solid var(--hair);display:block}
+
+/* --- el tab de Nelly va aparte del resto --- */
+.nav button[data-k="nelly"]{color:var(--gold);font-weight:800}
+.nav button[data-k="nelly"]::before{content:'';display:inline-block;width:7px;height:7px;
+  border-radius:50%;background:var(--gold);margin-right:7px;vertical-align:middle}
+.nav button[data-k="nelly"].on{color:#fff}
+.nav button[data-k="nelly"].on::before{background:#fff}

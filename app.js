@@ -236,20 +236,20 @@
 
   /* ---------- estructura principal ---------- */
   function tabsFor() {
-    if (isAdmin()) return ['cmd', 'projects', 'attendance', 'finance', 'crm', 'content', 'receipts', 'shifts', 'docs', 'pay'];
+    if (isAdmin()) return ['cmd', 'projects', 'nelly', 'attendance', 'finance', 'crm', 'content', 'receipts', 'shifts', 'docs', 'pay'];
     /* Contenido es su propio interruptor, no viene pegado a Oficina ni a
        Finanzas: quien publica no tiene por que ver los numeros. */
     const can = S.me.perms || {};
     const cont = can.content ? ['content'] : [];
     if (S.me.is_office) return ['projects', 'attendance'].concat(cont, ['receipts', 'finance', 'shifts', 'docs']);
-    if (S.me.is_finance) return ['finance', 'receipts', 'projects', 'attendance'].concat(cont);
+    if (S.me.is_finance) return ['finance', 'nelly', 'receipts', 'projects', 'attendance'].concat(cont);
     return ['projects', 'clock', 'shifts', 'docs', 'pay'].filter((k) => can[k]).concat(cont);
   }
   function shell() {
     const tabs = tabsFor();
     if (!S.tab || tabs.indexOf(S.tab) < 0) S.tab = tabs[0] || null;
     const main = h('main', { id: 'main', tabindex: '-1' });
-    const nav = h('nav', { class: 'nav', 'aria-label': 'Main' }, tabs.map((k) => h('button', { type: 'button', class: S.tab === k ? 'on' : '', 'aria-current': S.tab === k ? 'page' : null, onclick: () => { S.tab = k; S.projectId = null; S.ptab = 'feed'; render(); } }, t('tab_' + k))));
+    const nav = h('nav', { class: 'nav', 'aria-label': 'Main' }, tabs.map((k) => h('button', { type: 'button', 'data-k': k, class: S.tab === k ? 'on' : '', 'aria-current': S.tab === k ? 'page' : null, onclick: () => { S.tab = k; S.projectId = null; S.ptab = 'feed'; render(); } }, t('tab_' + k))));
     const head = h('header', { class: 'top' }, h('div', { class: 'topin' }, h('img', { src: 'logo-blanco.png', alt: 'Proven Solutions', class: 'logo' }),
       h('div', { class: 'who' }, langToggle(), h('span', { class: 'me' }, h('span', { class: 'av' }, ini(S.me.full_name)), h('span', { class: 'nm' }, S.me.full_name),
         isAdmin() ? chip('Admin', 'gold') : S.me.is_office ? chip(t('office'), 'gold') : null),
@@ -261,7 +261,8 @@
   }
   function showTab(main) {
     fill(main, spin());
-    const v = { cmd: viewCmd, projects: viewProjects, attendance: viewAttendance, receipts: viewReceipts, shifts: viewShifts, docs: viewDocs, pay: viewPay, clock: viewClock, finance: viewFinance, crm: viewCrm, content: viewContent }[S.tab];
+    const v = { cmd: viewCmd, projects: viewProjects, attendance: viewAttendance, receipts: viewReceipts, shifts: viewShifts, docs: viewDocs, pay: viewPay, clock: viewClock, finance: viewFinance, crm: viewCrm, content: viewContent,
+      nelly: (m) => (window.NELLY ? window.NELLY.view(m) : fill(m, empty('Nelly', 'nelly.js no cargó'))) }[S.tab];
     Promise.resolve(v(main)).catch((e) => { console.warn(e); fill(main, empty(t('err_generic'), errText(e))); });
   }
   const refresh = () => { const m = document.getElementById('main'); if (m) showTab(m); };
@@ -2257,4 +2258,11 @@
   }
   window.__portal = { S, render };
   boot();
+
+  /* Nelly vive en su propio archivo. Estos son los ayudantes que necesita:
+     se exponen a propósito y nada más que esto. */
+  window.PS = { h: h, fill: fill, modal: modal, toast: toast, run: run, money: money,
+    field: field, chip: chip, ico: ico, empty: empty, t: t, L: L, dkey: dkey, fDate: fDate,
+    API: API, S: S, isAdmin: isAdmin, isStaff: isStaff, isFinance: isFinance,
+    refresh: refresh, errText: errText, askConfirm: askConfirm, sb: sb };
 })();
