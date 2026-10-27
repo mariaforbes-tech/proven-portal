@@ -38,10 +38,12 @@
     return ready;
   }
 
+  /* El logo se entrega como {data, w, h} y no como la imagen suelta, para
+     que el mismo código sirva dentro del navegador y fuera de él. */
   function logo() {
     return new Promise(function (ok) {
       var i = new Image();
-      i.onload = function () { ok(i); };
+      i.onload = function () { ok({ data: i, w: i.width, h: i.height }); };
       i.onerror = function () { ok(null); };   // sin logo antes que sin documento
       i.src = 'logo-dorado.png';
     });
@@ -71,11 +73,10 @@
   /* Encabezado: logo y datos de la empresa a la izquierda, tipo de
      documento, número y fechas a la derecha, como una factura normal. */
   Sheet.prototype.head = function (kind, number, rows, sub) {
-    var top = this.y, lw = 118, hgt = 0;
+    var top = this.y, lw = 152, hgt = 0;
     if (this.img) {
-      var r = this.img.height / this.img.width;
-      hgt = lw * r;
-      this.d.addImage(this.img, 'PNG', M, top, lw, hgt);
+      hgt = lw * (this.img.h / this.img.w);
+      this.d.addImage(this.img.data, 'PNG', M, top, lw, hgt);
     }
     var ly = top + hgt + (hgt ? 12 : 0);
     this.font(9.5, true).d.text('Proven Solutions USA LLC', M, ly + 8);
@@ -170,6 +171,10 @@
   /* Tabla de partidas. cols: [{t, w, a}] */
   Sheet.prototype.table = function (cols, rows, totals) {
     var self = this, x0 = M;
+    /* Una tabla que cabe entera no se parte: un total huérfano en la página
+       siguiente, separado de sus renglones, se lee como un error. */
+    var est = (rows.length + (totals ? totals.length : 0)) * 24 + 40;
+    if (est < H - M * 2 - 40) this.room(est);
     function row(cells, bold, bg) {
       self.font(9, bold);
       var parts = cells.map(function (c, i) {
