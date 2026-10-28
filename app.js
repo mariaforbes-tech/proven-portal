@@ -232,6 +232,25 @@
       h('div', { class: 'acard' }, h('form', { class: 'frm', onsubmit: async (e) => { e.preventDefault(); try { await API.setPassword(pw.value); S.recovery = false; S.user = await API.session(); S.me = await API.myProfile(); toast(t('pw_updated')); render(); } catch (x) { err.textContent = errText(x); } } },
         h('h2', null, t('new_pw')), field(t('password'), pw, t('pw_hint')), err, h('button', { class: 'btn', type: 'submit' }, t('save')))));
   }
+  /* Cualquiera puede cambiar su propia clave estando adentro. Antes solo
+     se podia por el correo de recuperacion, y cuando ese correo no llega,
+     la persona queda encerrada afuera de su propio portal. */
+  function changePw() {
+    const pw = h('input', { type: 'password', required: true, minlength: 8, autocomplete: 'new-password' });
+    const pw2 = h('input', { type: 'password', required: true, minlength: 8, autocomplete: 'new-password' });
+    const err = h('p', { class: 'err', role: 'alert' });
+    const btn = h('button', { class: 'btn', type: 'submit' }, t('save'));
+    const form = h('form', { class: 'frm', onsubmit: async (e) => {
+      e.preventDefault(); err.textContent = '';
+      if (pw.value !== pw2.value) { err.textContent = t('pw_nomatch'); return; }
+      busy(btn, true);
+      try { await API.setPassword(pw.value); m.close(); toast(t('pw_updated')); }
+      catch (x) { err.textContent = errText(x); busy(btn, false); }
+    } }, field(t('new_pw'), pw, t('pw_hint')), field(t('pw_again'), pw2), err, btn);
+    const m = modal(t('change_pw'), form);
+    setTimeout(() => pw.focus(), 60);
+  }
+
   async function signOut() { try { await API.signOut(); } catch (e) { /* ok */ } S.me = null; S.user = null; S.tab = null; S.projectId = null; S.authTab = 'in'; render(); }
 
   /* ---------- estructura principal ---------- */
@@ -256,6 +275,7 @@
     const head = h('header', { class: 'top' }, h('div', { class: 'topin' }, h('img', { src: 'logo-blanco.png', alt: 'Proven Solutions', class: 'logo' }),
       h('div', { class: 'who' }, langToggle(), h('span', { class: 'me' }, h('span', { class: 'av' }, ini(S.me.full_name)), h('span', { class: 'nm' }, S.me.full_name),
         isAdmin() ? chip('Admin', 'gold') : S.me.is_office ? chip(t('office'), 'gold') : null),
+      h('button', { class: 'lnk light', type: 'button', onclick: changePw }, t('change_pw')),
       h('button', { class: 'lnk light', type: 'button', onclick: signOut }, t('logout')))), tabs.length ? nav : null);
     const frag = h('div', { class: 'shell' }, head, main);
     if (!tabs.length) main.append(empty(t('no_modules'), t('no_modules_sub')));
