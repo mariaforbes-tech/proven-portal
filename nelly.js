@@ -269,28 +269,44 @@
     var s = new Sheet(d, img, v.co);
     var m = function (n) { return '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
 
+    /* Un invoice no puede decir que se emite bajo un contrato firmado
+       cuando no se firmó ninguno. Si ese cobro se discute, esa sola línea
+       juega en contra. Sin contrato, el invoice se para sobre el estimado
+       aprobado, que es lo que de verdad hubo. */
+    var bajoEstimado = !!v.sin_contrato;
+    var n = 0;
+    function sec(title, need) { s.section(++n, title, need); }
+
     s.head('INVOICE', v.number,
       [['Invoice date', v.date], ['Due date', v.due]],
-      'Issued under the signed Services Agreement.');
+      bajoEstimado
+        ? (v.estimate_number
+            ? 'Issued under Estimate #' + v.estimate_number + ', as approved by the client.'
+            : 'Issued for work performed at the client’s request.')
+        : 'Issued under the signed Services Agreement.');
 
     /* Las fechas ya van en el encabezado: repetirlas aquí solo da lugar a
        que un día no coincidan. */
-    s.section(1, 'BILL TO & PROJECT');
+    sec('BILL TO & PROJECT');
     s.pairs([
       [['Bill to, client full legal name', v.bill.name], ['Project Address', v.project.address]],
-      [['Client Address', v.bill.address], ['Original Contract Date', v.project.contract_date]],
+      [['Client Address', v.bill.address], bajoEstimado
+        ? ['Estimate #', v.estimate_number || '—']
+        : ['Original Contract Date', v.project.contract_date]],
       [['Client Email', v.bill.email], ['Client Phone', v.bill.phone]]
     ]);
 
-    s.section(2, 'THIS INVOICE IS FOR');
+    sec('THIS INVOICE IS FOR');
     s.font(8, false, GREY).d.text('Mark one:', M, s.y); s.y += 14;
     var opts = FOR_OPTS.map(function (o) {
-      return o.k === 'change_order' && v.co_number
-        ? { k: o.k, t: o.t + ' #' + v.co_number, sub: o.sub } : o;
+      var t2 = o.k === 'change_order' && v.co_number ? o.t + ' #' + v.co_number : o.t;
+      /* Los subtítulos remiten a cláusulas del contrato ("per the down
+         payment schedule in the Agreement"). Sin contrato sobran. */
+      return { k: o.k, t: t2, sub: bajoEstimado ? '' : o.sub };
     });
     s.checks(opts, v.for);
 
-    s.section(3, 'CHARGES');
+    sec('CHARGES');
     s.table(
       [{ t: 'Description of Work / Material', w: CW - 190 }, { t: 'Qty', w: 50, a: 'r' },
        { t: 'Unit Price', w: 70, a: 'r' }, { t: 'Line Total', w: 70, a: 'r' }],
@@ -303,25 +319,40 @@
         .concat([['INVOICE TOTAL DUE', '', '', m(v.total)]])
     );
 
-    s.section(4, 'ACCOUNT SUMMARY');
-    s.table(
-      [{ t: '', w: CW - 120 }, { t: '', w: 120, a: 'r' }],
-      [['Original Contract Amount', m(v.sum.contract)],
-       ['Approved Change Orders (total to date)', m(v.sum.cos)],
-       ['Total Paid to Date (before this invoice)', m(v.sum.paid)],
-       ['This Invoice', m(v.total)]],
-      [['REMAINING BALANCE AFTER THIS INVOICE', m(v.sum.balance_after)]]
-    );
+    /* Sin contrato, este cuadro imprimiría "Original Contract Amount $0.00"
+       y un saldo calculado sobre ese cero. Al cliente le parece un error, y
+       con razón: no hay cuenta de contrato que resumir. */
+    if (!bajoEstimado) {
+      /* Cinco renglones y el total: si no se reserva el alto de la tabla,
+         el título se queda solo al pie de una página y los números salen
+         en la siguiente. */
+      sec('ACCOUNT SUMMARY', 108);
+      s.table(
+        [{ t: '', w: CW - 120 }, { t: '', w: 120, a: 'r' }],
+        [['Original Contract Amount', m(v.sum.contract)],
+         ['Approved Change Orders (total to date)', m(v.sum.cos)],
+         ['Total Paid to Date (before this invoice)', m(v.sum.paid)],
+         ['This Invoice', m(v.total)]],
+        [['REMAINING BALANCE AFTER THIS INVOICE', m(v.sum.balance_after)]]
+      );
+    }
 
-    s.section(5, 'HOW TO PAY');
+    sec('HOW TO PAY');
     s.para('Zelle: Provensolutionsusa@gmail.com', 9, true);
     s.para('ACH / wire / certified check (payable to Proven Solutions USA LLC): contact us for instructions at (203) 249-0981.');
-    s.para('Credit card: a processing surcharge may apply, as stated in the Agreement.');
+    s.para('Credit card: a processing surcharge may apply'
+      + (bajoEstimado ? '.' : ', as stated in the Agreement.'));
     s.para('Please include the Invoice # in the payment memo.', 9, true);
 
-    s.section(6, 'PAYMENT TERMS');
-    s.para('LATE PAYMENT. As stated in the signed Services Agreement, an invoice not paid in full by its due date accrues interest at 1% per day (simple interest) on the outstanding balance, beginning the day after the due date, and is subject to the Stop-Work provision (Section 5): no Proven crew reports to the site until the balance is paid.', 8.5);
-    s.para('Subscription invoices follow Section 4.2 of the Agreement (due by the 10th of the month; service is suspended if unpaid). Material Upgrade invoices are due Net 7 days.', 8.5);
+    sec('PAYMENT TERMS', bajoEstimado ? 38 : 92);
+    if (bajoEstimado) {
+      /* El 1% diario y el stop-work salen del contrato. Sin firma no se
+         pueden cobrar, y ponerlos aquí solo da algo que pelear. */
+      s.para('This invoice covers work performed and accepted at the amounts shown above. Payment is due in full by the due date stated at the top of this invoice. Please raise any question about the amounts before the due date.', 8.5);
+    } else {
+      s.para('LATE PAYMENT. As stated in the signed Services Agreement, an invoice not paid in full by its due date accrues interest at 1% per day (simple interest) on the outstanding balance, beginning the day after the due date, and is subject to the Stop-Work provision (Section 5): no Proven crew reports to the site until the balance is paid.', 8.5);
+      s.para('Subscription invoices follow Section 4.2 of the Agreement (due by the 10th of the month; service is suspended if unpaid). Material Upgrade invoices are due Net 7 days.', 8.5);
+    }
     if (v.notes) { s.y += 4; s.para('Notes: ' + v.notes, 8.5, false, GREY); }
 
     s.y += 10; s.rule();
@@ -1068,6 +1099,66 @@
     }
   }
 
+  /* ---------- subir un estimado hecho por fuera ----------
+     Mientras el estimador no esté al 100%, los estimados se siguen haciendo
+     por fuera y el portal no se entera de que existen. Esto es lo mínimo
+     para que se entere: el proyecto, el PDF y el número. Nada más. */
+  function estimateUploadFlow(main, ctx) {
+    show(function () {
+      pickProject(main, ctx, 'Subir un estimado', function (pr) {
+        show(function () { estimateUploadForm(main, pr); });
+      });
+    });
+  }
+
+  function estimateUploadForm(main, pr) {
+    var file = h('input', { type: 'file', accept: 'application/pdf,.pdf' });
+    var num = h('input', { placeholder: 'Ej: 052' });
+
+    /* El número casi siempre ya viene en el nombre del archivo. Se rellena
+       solo; si no acierta, ella lo corrige encima. */
+    file.onchange = function () {
+      var f = file.files && file.files[0];
+      if (!f || num.value.trim()) return;
+      var m = String(f.name).replace(/\.pdf$/i, '').match(/(\d{2,})(?!.*\d)/);
+      if (m) num.value = m[1];
+    };
+
+    var go = h('button', { class: 'btn', type: 'button' }, 'Subir');
+    go.onclick = function () {
+      var f = file.files && file.files[0];
+      if (!f) { toast('Escoge el PDF.', true); return; }
+      var n = num.value.trim();
+      if (!n) { toast('Falta el número del estimado.', true); return; }
+      run(go, function () {
+        return keepFile(pr, 'estimate', n, f).then(function (path) {
+          return D.save({
+            kind: 'estimate', number: n, project_id: pr.id,
+            status: 'issued', issued_on: P.dkey(new Date()),
+            body: { externo: true, archivo: f.name }, pdf_path: path
+          });
+        }).then(function () {
+          toast('Estimado ' + n + ' guardado.');
+          view(main);
+        }).catch(function (e) {
+          var t = P.errText(e);
+          /* El choque de número es el error que de verdad va a pasar, y el
+             mensaje crudo de Postgres no le dice nada a nadie. */
+          throw new Error(/duplicate|unique/i.test(t)
+            ? 'Ya hay un estimado con el número ' + n + '. Ponle otro.' : t);
+        });
+      });
+    };
+
+    fill(main,
+      h('div', { class: 'sech' }, h('h2', null, 'Subir un estimado'), backBtn()),
+      robot('Súbeme el PDF y lo dejo colgado de ' + pr.name + '.', 'estimado'),
+      h('div', { class: 'card' },
+        field('El PDF del estimado', file),
+        field('Número', num),
+        h('div', { class: 'acts' }, go)));
+  }
+
   /* ---------- 2. lo que Nelly necesita saber ---------- */
   function estimateForm(main, ctx, dest, keep) {
     var st = keep || { formato: 'B', scope: '', zip: '', fotos: [] };
@@ -1671,6 +1762,14 @@
         .select('id,number,project_id,issued_on,total,status')
         .eq('kind', 'estimate').order('created_at', { ascending: false }).limit(60));
     },
+    /* Los estimados de UN proyecto, para que el invoice pueda apuntar al
+       que lo originó. Los anulados no sirven para cobrar. */
+    estimatesOf: function (pid) {
+      return q(sb.from('documents')
+        .select('id,number,issued_on,total')
+        .eq('kind', 'estimate').eq('project_id', pid).neq('status', 'void')
+        .order('created_at', { ascending: false }));
+    },
     doc: function (id) { return q(sb.from('documents').select('*').eq('id', id).single()); },
     voidDoc: function (id) { return q(sb.from('documents').update({ status: 'void' }).eq('id', id)); },
     leads: function () {
@@ -1710,6 +1809,21 @@
         .upload(path, blob, { contentType: 'application/pdf' })
     ).then(function (r) { return r && r.error ? null : path; })
       .catch(function () { return null; });
+  }
+
+  /* Igual que keep(), pero para un PDF que ya existe y ella sube. Mientras
+     el estimador no esté listo, los estimados se hacen por fuera: esta es
+     la puerta para que el portal los conozca. */
+  function keepFile(pr, kind, num, file) {
+    var path = pr.id + '/docs/' + kind + '-' +
+      String(num).replace(/[^A-Za-z0-9_.-]/g, '') + '.pdf';
+    return Promise.resolve(
+      sb.storage.from('project-files')
+        .upload(path, file, { contentType: 'application/pdf', upsert: true })
+    ).then(function (r) {
+      if (r && r.error) throw new Error(r.error.message || 'No se pudo subir el PDF.');
+      return path;
+    });
   }
 
   var MONTHS = ['January','February','March','April','May','June','July',
@@ -1757,6 +1871,7 @@
   var MENU = [
     { k: 'estimate', t: 'Hacer un estimado', d: 'Lee las fotos y arma el PDF.' },
     { k: 'estimate_edit', t: 'Modificar un estimado', d: 'Abre uno viejo y sale uno nuevo.' },
+    { k: 'estimate_up', t: 'Subir un estimado', d: 'El que hiciste por fuera, en PDF.' },
     { k: 'contract', t: 'Hacer el contrato', d: 'Saca los datos del proyecto.' },
     { k: 'change_order', t: 'Hacer un change order', d: 'Cuelga del contrato.' },
     { k: 'invoice', t: 'Hacer un invoice', d: 'El portal calcula, tú confirmas.' },
@@ -1806,6 +1921,7 @@
         el.onclick = function () {
           if (m.k === 'estimate') estimateFlow(main, ctx);
           else if (m.k === 'estimate_edit') estimateEditFlow(main, ctx);
+          else if (m.k === 'estimate_up') estimateUploadFlow(main, ctx);
           else if (m.k === 'invoice') invoiceFlow(main, ctx);
           else if (m.k === 'receipt') receiptFlow(main, ctx);
           else if (m.k === 'contract') contractFlow(main, ctx);
@@ -1951,18 +2067,32 @@
   function invoiceFlow(main, ctx) {
     show(function () { pickProject(main, ctx, 'Invoice', function (pr) {
       fill(main, h('div', { class: 'spin' }));
-      Promise.all([D.payments(pr.id), D.summary(pr.id)]).then(function (r) {
-        var pays = r[0] || [], sum = (r[1] || [])[0] || {};
-        show(function () { invoiceForm(main, ctx, pr, pays, sum); });
+      Promise.all([D.payments(pr.id), D.summary(pr.id),
+        D.estimatesOf(pr.id).catch(function () { return []; })]).then(function (r) {
+        var pays = r[0] || [], sum = (r[1] || [])[0] || {}, ests = r[2] || [];
+        show(function () { invoiceForm(main, ctx, pr, pays, sum, ests); });
       }).catch(function (e) { fill(main, empty('Nelly', P.errText(e))); });
     }); });
   }
 
-  function invoiceForm(main, ctx, pr, pays, sum, keep) {
+  function invoiceForm(main, ctx, pr, pays, sum, ests, keep) {
     var faltan = missing(pr);
     var today = P.dkey(new Date());
     var st = keep || { for: 'milestone', date: today, due: addDays(today, 7),
-      items: [], tax: 0, notes: '', payment_id: null, reason: '' };
+      items: [], tax: 0, notes: '', payment_id: null, reason: '', estimate_number: '' };
+    ests = ests || [];
+
+    /* De qué estimado sale este cobro. Cuando no hubo contrato firmado,
+       el estimado aprobado es lo único que respalda el invoice, y tiene
+       que ir impreso en el PDF. */
+    var estSel = h('select', null,
+      [h('option', { value: '' },
+        ests.length ? 'Ninguno' : 'No hay estimados de este proyecto')].concat(
+        ests.map(function (x) {
+          return h('option', { value: x.number },
+            'Estimado ' + x.number + (x.issued_on ? ' · ' + x.issued_on : ''));
+        })));
+    estSel.value = st.estimate_number || '';
 
     var open = pays.filter(function (x) { return !x.paid_on; });
     var sel = h('select', null,
@@ -2021,7 +2151,8 @@
         for: forSel.value, date: fdate.value, due: fdue.value,
         items: items, subtotal: Math.round(sub * 100) / 100, tax: tax,
         total: Math.round((sub + tax) * 100) / 100,
-        notes: fnotes.value.trim(), payment_id: sel.value || null, reason: st.reason
+        notes: fnotes.value.trim(), payment_id: sel.value || null, reason: st.reason,
+        estimate_number: estSel.value || ''
       };
       show(function () { invoiceConfirm(main, ctx, pr, pays, sum, v); });
     };
@@ -2032,7 +2163,7 @@
       robot('Escoge qué se cobra. Lo demás lo traigo yo.', 'invoice'),
       summaryCard(sum),
       h('div', { class: 'card' },
-        field('Qué cuota se cobra', sel),
+        h('div', { class: 'two' }, field('Qué cuota se cobra', sel), field('Sale del estimado', estSel)),
         h('div', { class: 'two' }, field('Tipo de cobro', forSel), field('Impuesto sobre materiales ($)', ftax)),
         h('div', { class: 'two' }, field('Fecha del invoice', fdate), field('Vence', fdue)),
         h('div', { class: 'sech' }, h('h3', null, 'Renglones'), add),
@@ -2062,6 +2193,10 @@
         d.for = v.for; d.co_number = '';
         d.items = v.items; d.subtotal = v.subtotal; d.tax = v.tax; d.total = v.total;
         d.notes = v.notes;
+        d.estimate_number = v.estimate_number || '';
+        /* Sin contrato firmado no hay cuenta de contrato que resumir ni
+           cláusulas que citar. El invoice se para sobre el estimado. */
+        d.sin_contrato = !Number(sum.contract_original);
         d.sum = {
           contract: sum.contract_original, cos: sum.change_orders, paid: sum.paid,
           balance_after: Math.round((Number(sum.balance) - 0) * 100) / 100
@@ -2088,7 +2223,17 @@
         h('div', { class: 'lrow slim' }, h('span', null, 'Subtotal'), h('b', null, money(v.subtotal))),
         v.tax ? h('div', { class: 'lrow slim' }, h('span', null, 'Impuesto'), h('b', null, money(v.tax))) : null,
         h('div', { class: 'lrow slim tot' }, h('span', null, 'TOTAL A COBRAR'), h('b', null, money(v.total))),
-        h('p', { class: 'mut sm' }, 'Fecha ' + longDate(v.date) + ' · vence ' + longDate(v.due))),
+        h('p', { class: 'mut sm' }, 'Fecha ' + longDate(v.date) + ' · vence ' + longDate(v.due)),
+        v.estimate_number
+          ? h('p', { class: 'mut sm' }, 'Sale del estimado ' + v.estimate_number + '.')
+          : null),
+      /* Si no hubo contrato, el PDF cambia: no cita el Services Agreement
+         ni imprime el resumen de cuenta. Mejor que ella lo sepa antes. */
+      !Number(sum.contract_original) ? h('div', { class: 'card' },
+        h('p', { class: 'mut sm warnline' }, v.estimate_number
+          ? 'Este proyecto no tiene contrato firmado. El invoice va a decir que se emite bajo el estimado '
+            + v.estimate_number + ', sin citar el Services Agreement y sin resumen de cuenta.'
+          : 'Este proyecto no tiene contrato firmado ni estimado escogido. El invoice sale sin respaldo de ninguno de los dos: escoge el estimado arriba si existe.')) : null,
       sched ? h('div', { class: 'card' },
         h('p', { class: 'mut sm' }, 'La cuota programada es ' + P.L(sched, 'label') + ' por ' + money(sched.amount) + '.'),
         diff ? h('div', null,
