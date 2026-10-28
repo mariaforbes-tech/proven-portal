@@ -820,7 +820,7 @@
           toast(row && row.pdf_path
             ? 'Contrato generado. El cliente ya lo puede firmar en su portal.'
             : 'Contrato generado, pero no se pudo guardar en el portal: el cliente no lo va a ver.');
-          return sincronizar(pr).then(function () { view(main); });
+          return sincronizar(pr, row && row.id).then(function () { view(main); });
         });
       });
     };
@@ -1231,7 +1231,7 @@
             .then(function (row) {
               /* El proyecto acaba de nacer: que aparezca ya en el tracker,
                  aunque ella se salga antes de emitir el invoice. */
-              return sincronizar(pr).then(function () { return row; });
+              return sincronizar(pr, row && row.id).then(function () { return row; });
             })
             .then(function (row) {
               return Promise.all([
@@ -1686,7 +1686,9 @@
       var n = row && row.number ? ' ' + row.number : '';
       toast('Estimado' + n + ' emitido y guardado.'
         + (dest.lead ? ' El lead quedó en Cotizado.' : ''));
-      view(main);
+      /* Para un lead no hay proyecto, y sin proyecto no hay fila en el
+         tracker ni carpeta en Drive: ese PDF solo queda descargado. */
+      return sincronizar(dest.pr, row && row.id).then(function () { view(main); });
     });
   }
 
@@ -1798,7 +1800,7 @@
           toast(row && row.pdf_path
             ? 'Change order generado. El cliente ya lo puede firmar en su portal.'
             : 'Change order generado, pero no se pudo guardar en el portal: el cliente no lo va a ver.');
-          return sincronizar(pr).then(function () { view(main); });
+          return sincronizar(pr, row && row.id).then(function () { view(main); });
         });
       });
     };
@@ -1856,7 +1858,7 @@
      Lo que no esté en la tabla sale tal cual: el nombre de un proyecto o
      de un cliente nunca se toca. */
   var EN = {
-    "Quedó guardado, pero el Project Tracker no se actualizó: ": "It was saved, but the Project Tracker was not updated: ",
+    "Quedó guardado, pero el tracker o el Drive no se actualizaron: ": "It was saved, but the tracker or Drive were not updated: ",
     "El invoice quedó guardado, pero no pude crear el cobro: ": "The invoice was saved, but I couldn't create the receivable: ",
     "Súbeme el PDF y yo saco de ahí el proyecto, el cliente y el total.": "Send me the PDF and I'll pull the project, the client and the total out of it.",
     "No pude sacar el número del PDF. Escríbelo.": "I couldn't get the number from the PDF. Type it in.",
@@ -2621,10 +2623,10 @@
           if (extra) Object.keys(extra).forEach(function (k) { row[k] = extra[k]; });
           return D.save(row).then(function (guardado) {
             if (kind !== 'invoice') {
-              return sincronizar(pr).then(function () { return guardado; });
+              return sincronizar(pr, guardado && guardado.id).then(function () { return guardado; });
             }
             return cobrar(pr, v, extra, num)
-              .then(function () { return sincronizar(pr); })
+              .then(function () { return sincronizar(pr, guardado && guardado.id); })
               .then(function () { return guardado; })
               .catch(function (e) {
                 /* El invoice ya quedó guardado: tumbar todo por esto sería
@@ -2647,15 +2649,26 @@
 
      No se le avisa a nadie cuando sale bien, porque es lo normal. Cuando
      falla sí, para que nadie mire la hoja creyendo que está al día. */
-  function sincronizar(pr) {
+  function sincronizar(pr, docId) {
     if (!pr || !pr.id) return Promise.resolve();
-    return Promise.resolve(sb.functions.invoke('tracker', { body: { project_id: pr.id } }))
-      .then(function (r) {
-        if (r && r.error) throw r.error;
-        if (r && r.data && r.data.error) throw new Error(r.data.error);
+
+    function llamar(cuerpo) {
+      return Promise.resolve(sb.functions.invoke('tracker', { body: cuerpo }))
+        .then(function (r) {
+          if (r && r.error) throw r.error;
+          if (r && r.data && r.data.error) throw new Error(r.data.error);
+        });
+    }
+
+    /* Primero los números, después el archivo. En ese orden porque si el
+       proyecto todavía no tiene fila, la primera llamada se la crea, y la
+       segunda ya encuentra dónde anotar la carpeta de Drive. */
+    return llamar({ project_id: pr.id })
+      .then(function () {
+        return docId ? llamar({ project_id: pr.id, accion: 'archivar', doc_id: docId }) : null;
       })
       .catch(function (e) {
-        toast('Quedó guardado, pero el Project Tracker no se actualizó: ' + P.errText(e), true);
+        toast('Quedó guardado, pero el tracker o el Drive no se actualizaron: ' + P.errText(e), true);
       });
   }
 
