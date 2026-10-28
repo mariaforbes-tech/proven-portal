@@ -546,5 +546,10 @@ details.more>summary{cursor:pointer;font-size:.86rem;color:var(--mut);font-weigh
 ul.bul{margin:0;padding-left:18px}
 ul.bul li{margin:4px 0;line-height:1.45}
 /* Lo que hay que mirar antes de mandar nada. */
+/* Casilla con su texto al lado, para decisiones que hay que leer antes
+   de marcar. Toda la linea es clickeable, no solo el cuadrito. */
+.cons{display:flex;gap:10px;align-items:flex-start;font-size:.9rem;line-height:1.45;
+  cursor:pointer;margin-top:10px}
+.cons input{flex:none;width:19px;height:19px;margin-top:1px;accent-color:var(--navy)}
 .card.warnbox{background:#FBF0D8;border-color:#E6D49B}
 .card.warnbox h3{color:#7A5A0E}

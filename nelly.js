@@ -980,6 +980,94 @@
     });
   }
 
+  /* ---------- modificar uno que ya existe ----------
+     Un documento emitido no se edita: eso lo prohibe la base y es a
+     proposito. Lo que se hace es abrirlo con todo lo que tenia, cambiarlo
+     y emitir uno nuevo con numero nuevo. El viejo se puede anular ahi
+     mismo, porque dos estimados vivos para el mismo trabajo es como se
+     termina honrando el que no era. */
+  function estimateEditFlow(main, ctx) {
+    show(function () {
+      fill(main,
+        h('div', { class: 'sech' }, h('h2', null, 'Modificar un estimado'), backBtn()),
+        h('div', { class: 'spin' }));
+
+      D.estimates().then(function (docs) {
+        var box = h('div', { class: 'list' });
+        var find = h('input', { type: 'search', placeholder: 'Buscar por numero, cliente o proyecto...' });
+        var vivos = (docs || []).filter(function (d) { return d.status !== 'void'; });
+
+        function nombre(d) {
+          var pr = ctx.projects.filter(function (x) { return x.id === d.project_id; })[0];
+          return pr ? pr.name : 'Sin proyecto';
+        }
+        function draw() {
+          var s2 = find.value.trim().toLowerCase();
+          var list = vivos.filter(function (d) {
+            if (!s2) return true;
+            return (d.number + ' ' + nombre(d)).toLowerCase().indexOf(s2) >= 0;
+          });
+          fill(box, list.length ? list.map(function (d) {
+            var el = h('button', { class: 'card lrow slim pick', type: 'button' },
+              h('span', null, h('b', null, 'Estimado ' + d.number),
+                h('small', null, [nombre(d), d.issued_on ? longDate(d.issued_on) : ''].filter(Boolean).join(' \u00b7 '))),
+              h('b', null, d.total != null ? money(d.total) : '-'));
+            el.onclick = function () { abrir(d); };
+            return el;
+          }) : h('p', { class: 'mut small' }, vivos.length
+            ? 'Ninguno coincide.'
+            : 'Todavia no hay estimados emitidos.'));
+        }
+        find.oninput = draw; draw();
+
+        fill(main,
+          h('div', { class: 'sech' }, h('h2', null, 'Modificar un estimado'), backBtn()),
+          robot('\u00bfCual abro? Sale uno nuevo con numero nuevo, el viejo no se toca.', 'change'),
+          h('div', { class: 'mb' }, find),
+          box);
+      }).catch(function (e) {
+        fill(main,
+          h('div', { class: 'sech' }, h('h2', null, 'Modificar un estimado'), backBtn()),
+          robot('No pude traer los estimados. ' + P.errText(e), 'ups'));
+      });
+    });
+
+    function abrir(meta) {
+      fill(main, h('div', { class: 'spin' }));
+      D.doc(meta.id).then(function (d) {
+        var b = d.body || {};
+        var pr = ctx.projects.filter(function (x) { return x.id === d.project_id; })[0];
+        var dest = pr ? { pr: pr } : { cli: {
+          name: (b.bill && b.bill.name) || '',
+          dirs: (b.bill && b.bill.address) ? [b.bill.address] : []
+        } };
+        var v = {
+          formato: b.formato || 'B', scope: '', zip: '', fotos: [],
+          cliente: (b.bill && b.bill.name) || '',
+          direccion: (b.bill && b.bill.address) || ''
+        };
+        var res = {
+          titulo: b.titulo || '', resumen: b.resumen || '',
+          partidas: (b.filas || []).map(function (f) { return Object.assign({}, f); }),
+          excluye: b.excluye || [], preguntas: [], avisos: [],
+          mercado: {}, validez_dias: b.validez || 15,
+          _viejo: { id: d.id, number: d.number }
+        };
+        if (!res.partidas.length) {
+          fill(main,
+            h('div', { class: 'sech' }, h('h2', null, 'Modificar un estimado'), backBtn()),
+            robot('Ese estimado no guardo sus renglones, asi que no hay que abrir. Se hace uno nuevo.', 'ups'));
+          return;
+        }
+        show(function () { estimateReview(main, ctx, dest, v, res); });
+      }).catch(function (e) {
+        fill(main,
+          h('div', { class: 'sech' }, h('h2', null, 'Modificar un estimado'), backBtn()),
+          robot('No pude abrirlo. ' + P.errText(e), 'ups'));
+      });
+    }
+  }
+
   /* ---------- 2. lo que Nelly necesita saber ---------- */
   function estimateForm(main, ctx, dest, keep) {
     var st = keep || { formato: 'B', scope: '', zip: '', fotos: [] };
@@ -1292,10 +1380,23 @@
       setTimeout(function () { txt.focus(); }, 60);
     };
 
+    /* Si viene de uno viejo, se dice de frente que va a salir otro. */
+    var anular = h('input', { type: 'checkbox', checked: true });
+    res._anular = function () { return anular.checked; };
+    var cajaViejo = res._viejo ? h('div', { class: 'card warnbox' },
+      h('h3', null, 'Vienes del estimado ' + res._viejo.number),
+      h('p', { class: 'mut sm' }, 'Un documento emitido no se edita. Al generar sale uno nuevo con numero nuevo, y este queda como estaba.'),
+      h('label', { class: 'cons' }, anular,
+        h('span', null, 'Anular el ' + res._viejo.number + ' cuando salga el nuevo. Dejalo marcado salvo que quieras los dos vivos a la vez.'))
+    ) : null;
+
     pinta();
     fill(main,
       h('div', { class: 'sech' }, h('h2', null, res.titulo || 'Estimado'), backBtn()),
-      robot('Revisa antes de que esto salga. El número final es tuyo, no mío.', 'pensando'),
+      robot(res._viejo
+        ? 'Este es el ' + res._viejo.number + ' tal como quedo. Cambia lo que necesites.'
+        : 'Revisa antes de que esto salga. El número final es tuyo, no mío.', 'pensando'),
+      cajaViejo,
       res.resumen ? h('div', { class: 'card' }, h('p', null, res.resumen)) : null,
       lista('Ojo con esto', res.avisos, 'warnbox'),
       lista('Falta definir', res.preguntas),
@@ -1350,6 +1451,14 @@
           });
         });
       });
+    }).then(function (row) {
+      /* El viejo se anula despues, nunca antes: si la emision falla, ella
+         se queda con el que ya tenia y no con las manos vacias. */
+      if (res._viejo && res._anular && res._anular()) {
+        return D.voidDoc(res._viejo.id).then(function () { return row; })
+          .catch(function () { return row; });
+      }
+      return row;
     }).then(function (row) {
       /* La dirección queda guardada para ese cliente. La próxima vez sale
          en la lista y nadie la vuelve a escribir mal. */
@@ -1548,6 +1657,13 @@
     markPaid: function (id, on) {
       return q(sb.from('client_payments').update({ paid_on: on }).eq('id', id));
     },
+    estimates: function () {
+      return q(sb.from('documents')
+        .select('id,number,project_id,issued_on,total,status')
+        .eq('kind', 'estimate').order('created_at', { ascending: false }).limit(60));
+    },
+    doc: function (id) { return q(sb.from('documents').select('*').eq('id', id).single()); },
+    voidDoc: function (id) { return q(sb.from('documents').update({ status: 'void' }).eq('id', id)); },
     leads: function () {
       return q(sb.from('funnel_leads').select('*').order('updated_at', { ascending: false }).limit(500));
     },
@@ -1631,7 +1747,7 @@
   /* ---------- el saludo y las opciones ---------- */
   var MENU = [
     { k: 'estimate', t: 'Hacer un estimado', d: 'Lee las fotos y arma el PDF.' },
-    { k: 'estimate_edit', t: 'Modificar un estimado', d: 'Busca uno y lo abre para cambiarlo.', soon: true },
+    { k: 'estimate_edit', t: 'Modificar un estimado', d: 'Abre uno viejo y sale uno nuevo.' },
     { k: 'contract', t: 'Hacer el contrato', d: 'Saca los datos del proyecto.' },
     { k: 'change_order', t: 'Hacer un change order', d: 'Cuelga del contrato.' },
     { k: 'invoice', t: 'Hacer un invoice', d: 'El portal calcula, tú confirmas.' },
@@ -1680,6 +1796,7 @@
       if (!m.soon) {
         el.onclick = function () {
           if (m.k === 'estimate') estimateFlow(main, ctx);
+          else if (m.k === 'estimate_edit') estimateEditFlow(main, ctx);
           else if (m.k === 'invoice') invoiceFlow(main, ctx);
           else if (m.k === 'receipt') receiptFlow(main, ctx);
           else if (m.k === 'contract') contractFlow(main, ctx);
