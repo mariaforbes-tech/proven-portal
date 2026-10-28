@@ -963,7 +963,7 @@
           abiertos.map(function (l) {
             return fila(l.name,
               [ETAPAS[l.stage] || l.stage, l.borough, l.scope].filter(Boolean).join(' · '),
-              l.value != null ? h('b', null, money(l.value)) : P.chip(ETAPAS[l.stage] || l.stage, 'mut'),
+              l.value != null ? h('b', null, money(l.value)) : chip(ETAPAS[l.stage] || l.stage, 'mut'),
               function () {
                 /* Un lead puede ser alguien que ya trabajó contigo. Si su
                    nombre coincide con un cliente conocido, se le llevan sus
@@ -980,7 +980,7 @@
             return fila(c.name,
               [c.obras + (c.obras === 1 ? ' obra' : ' obras'),
                c.dirs.slice(0, 2).join(' · ')].filter(Boolean).join(' · '),
-              c.obras > 1 ? P.chip('Recurrente', 'gold') : null,
+              c.obras > 1 ? chip('Recurrente', 'gold') : null,
               function () {
                 show(function () {
                   estimateForm(main, ctx, { cli: {
@@ -1715,13 +1715,375 @@
     view: view
   };
 
+  /* ---------- español e inglés ----------
+     Nelly nació escrita en español, en duro, mientras el resto del portal
+     sí se traduce. Ana trabaja en inglés: veía el portal en inglés y
+     Nelly entera en español.
+
+     En vez de sembrar claves por dos mil líneas, se traduce en la puerta.
+     Todo el texto que Nelly le muestra a alguien sale por h(), field(),
+     toast(), empty(), modal() o chip(), así que basta envolver esos seis.
+     El texto de los PDF no pasa por ninguno de ellos, y por eso los
+     documentos siguen saliendo en inglés pase lo que pase.
+
+     Las frases armadas a pedazos ("Estimado para " + nombre) no calzan
+     exactas, por eso además se prueba por el principio y por el final.
+     Lo que no esté en la tabla sale tal cual: el nombre de un proyecto o
+     de un cliente nunca se toca. */
+  var EN = {
+    "Este proyecto no tiene contrato firmado ni estimado escogido. El invoice sale sin respaldo de ninguno de los dos: escoge el estimado arriba si existe.": "This project has no signed contract and no estimate selected. The invoice goes out backed by neither: pick the estimate above if there is one.",
+    " de viaje y parqueo, repartidos dentro del costo de la labor. El cliente no los ve como renglón: tu Rate Sheet dice que van incluidos en el día.": " of travel and parking, spread inside the labor cost. The client never sees them as a line item: your Rate Sheet says they are included in the day.",
+    "Qué hay que cambiar. Por ejemplo: quita toda la demolición del baño, el cliente la hace él. O: separa el piso como opción aparte.": "What has to change. For example: drop all the bathroom demolition, the client is doing it himself. Or: split the flooring out as a separate option.",
+    "Qué pidió el cliente, qué viste en el walkthrough, medidas si las tienes. Escribe como le hablarías a Miguel.": "What the client asked for, what you saw on the walkthrough, measurements if you have them. Write it the way you'd tell Miguel.",
+    "Lo que le digas que quite, lo quita, no lo vuelve a meter con otro nombre. Lo que no menciones queda igual.": "Whatever you tell her to drop, she drops; she won't slip it back in under another name. Anything you don't mention stays as it is.",
+    "Si no es suscripción, la sección 4.2 sale como \"Not applicable\". Lo mismo la 11 si el cliente no es GC.": "If it is not a subscription, section 4.2 prints as \"Not applicable\". Same for section 11 if the client is not a GC.",
+    "Un documento emitido no se edita. Al generar sale uno nuevo con numero nuevo, y este queda como estaba.": "An issued document is never edited. Generating produces a new one with a new number, and this one stays as it was.",
+    "Escribe en el que quieras y el otro se acomoda. Lo resta el código, no Nelly: si pones 150, baja 150.": "Type in either one and the other follows. The code subtracts it, not Nelly: if you put 150, it takes off 150.",
+    "Estoy mirando las fotos, armando el scope y buscando precios de la zona. Esto se demora un poco.": "I'm going through the photos, building the scope and looking up prices for the area. This takes a moment.",
+    "Este proyecto no tiene contrato firmado. El invoice va a decir que se emite bajo el estimado ": "This project has no signed contract. The invoice will say it is issued under estimate ",
+    "Sin fotos. Nelly puede trabajar solo con lo que escribas, pero con fotos acierta mucho más.": "No photos. Nelly can work from what you write alone, but with photos she gets much closer.",
+    "Change order generado, pero no se pudo guardar en el portal: el cliente no lo va a ver.": "Change order generated, but it could not be saved to the portal: the client will not see it.",
+    "Contrato generado, pero no se pudo guardar en el portal: el cliente no lo va a ver.": "Contract generated, but it could not be saved to the portal: the client will not see it.",
+    "Ese estimado no guardo sus renglones, asi que no hay que abrir. Se hace uno nuevo.": "That estimate did not save its line items, so there is nothing to open. We make a new one.",
+    " cuando salga el nuevo. Dejalo marcado salvo que quieras los dos vivos a la vez.": " when the new one is issued. Leave it ticked unless you want both live at once.",
+    "Una vez lo genere, el documento no se edita. Si algo está mal, cámbialo ahora.": "Once I generate it, the document is never edited. If something is wrong, change it now.",
+    "Entonces no va recibo. El recibo es la constancia de que el dinero ya entró.": "Then there is no receipt. A receipt is the proof that the money came in.",
+    "Una vez emitido, el recibo no se edita. Si algo está mal, cámbialo ahora.": "Once issued, the receipt is never edited. If something is wrong, change it now.",
+    "No puedo leer el CRM con este usuario, así que solo salen los proyectos.": "I can't read the CRM with this user, so only projects show.",
+    "Los change orders no llevan descuento. Eso lo dice tu propio contrato.": "Change orders carry no discount. Your own contract says so.",
+    "Mira sobre todo las casillas y las secciones que van a salir anuladas.": "Look above all at the boxes, and at the sections that will print as void.",
+    "Nada coincide. Si el cliente es nuevo, regístralo primero en el CRM.": "Nothing matches. If the client is new, add them to the CRM first.",
+    "Change order generado. El cliente ya lo puede firmar en su portal.": "Change order generated. The client can sign it in their portal now.",
+    "¿Cual abro? Sale uno nuevo con numero nuevo, el viejo no se toca.": "Which one do I open? A new one comes out with a new number; the old one is left alone.",
+    "Marco las casillas y lleno los datos. El texto legal no se toca.": "I tick the boxes and fill in the data. The legal text is never touched.",
+    "Revisa antes de que esto salga. El número final es tuyo, no mío.": "Check this before it goes out. The final number is yours, not mine.",
+    " se bajo a tu computador, pero NO quedo guardado en el portal: ": " downloaded to your computer, but it was NOT saved to the portal: ",
+    "Un recibo se emite después de que el dinero entró, nunca antes.": "A receipt is issued after the money comes in, never before.",
+    "Contrato generado. El cliente ya lo puede firmar en su portal.": "Contract generated. The client can sign it in their portal now.",
+    "¿Para quién es? Tiene que estar en el CRM o ser un proyecto.": "Who is it for? They have to be in the CRM, or be a project.",
+    ", sin citar el Services Agreement y sin resumen de cuenta.": ", without citing the Services Agreement and without an account summary.",
+    "Dime cómo entró la plata y con qué número de confirmación.": "Tell me how the money came in, and with what confirmation number.",
+    "Falta el número de confirmación. Es lo que prueba el pago.": "The confirmation number is missing. That is what proves the payment.",
+    "Esto cambia el valor del contrato. Revisa el total nuevo.": "This changes the contract amount. Check the new total.",
+    ". El documento sale igual, pero esos campos van vacíos.": ". The document still comes out, but those fields print empty.",
+    "Con esto Nelly busca el precio de mercado de la zona.": "Nelly uses this to look up the market price for the area.",
+    "Falta la plantilla. ¿Corriste nelly-3-plantillas.sql?": "The template is missing. Did you run nelly-3-plantillas.sql?",
+    "Escribe por qué el monto es distinto al de la cuota.": "Write why the amount differs from the installment.",
+    " Escribe por qué: queda guardado con el invoice.": " Write why: it is saved with the invoice.",
+    "Ese documento no quedó guardado en el portal.": "That document was not saved to the portal.",
+    "Escribe el scope o agrega al menos una foto.": "Write the scope or add at least one photo.",
+    "Escoge qué se cobra. Lo demás lo traigo yo.": "Pick what is being charged. I'll bring the rest.",
+    "Escoge una y yo pregunto solo lo que falte.": "Pick one and I'll only ask for what's missing.",
+    "Lo estoy rehaciendo con lo que me dijiste.": "I'm redoing it with what you told me.",
+    " tal como quedo. Cambia lo que necesites.": " exactly as it was. Change whatever you need.",
+    "Buscar por proyecto, cliente o dirección…": "Search by project, client or address…",
+    "Buscar por numero, cliente o proyecto...": "Search by number, client or project...",
+    " — ¿ya corriste nelly-1-documentos.sql?": " — have you run nelly-1-documentos.sql yet?",
+    "Sin fuentes. Toma el rango con pinzas.": "No sources. Take the range with a grain of salt.",
+    "B · Trabajo chico, labor y materiales": "B · Small job, labor and materials",
+    "No hay conexión con la base de datos.": "No connection to the database.",
+    "Este estimado le costó a la empresa ": "This estimate cost the company ",
+    "Invoice emitido. El PDF se descargó.": "Invoice issued. The PDF downloaded.",
+    "Receipt emitido. El PDF se descargó.": "Receipt issued. The PDF downloaded.",
+    "El cliente es un general contractor": "The client is a general contractor",
+    "Lo que cobra el mercado en esa zona": "What the market charges in that area",
+    "Súbeme el PDF y lo dejo colgado de ": "Send me the PDF and I'll file it under ",
+    "Clientes que ya trabajaron contigo": "Clients who have worked with you",
+    "Todavia no hay estimados emitidos.": "No estimates issued yet.",
+    "El que hiciste por fuera, en PDF.": "The one you made outside, as a PDF.",
+    "No hay estimados de este proyecto": "No estimates for this project",
+    "Ya hay un estimado con el número ": "There is already an estimate numbered ",
+    "Abre uno viejo y sale uno nuevo.": "Opens an old one, out comes a new one.",
+    "Buscar cliente, lead o proyecto…": "Search client, lead or project…",
+    "Cuéntame qué hay que cotizar en ": "Tell me what needs pricing at ",
+    "El portal calcula, tú confirmas.": "The portal does the math, you confirm.",
+    "Falta el número del estimado.": "The estimate number is missing.",
+    "Impuesto sobre materiales ($)": "Tax on materials ($)",
+    "No pude traer los estimados. ": "I couldn't fetch the estimates. ",
+    "Otra dirección, la escribo yo": "Another address, I'll type it",
+    "A · Obra grande con opciones": "A · Large job with options",
+    "Falta el valor del contrato.": "The contract amount is missing.",
+    "Lee las fotos y arma el PDF.": "Reads the photos and builds the PDF.",
+    "Nelly no encontró el portal.": "Nelly couldn't find the portal.",
+    "Por qué el monto es distinto": "Why the amount is different",
+    "Saca los datos del proyecto.": "Pulls the data from the project.",
+    "¿El cliente ya hizo el pago?": "Has the client made the payment?",
+    " El lead quedó en Cotizado.": " The lead is now marked Quoted.",
+    "EN CUÁNTO QUIERES QUE QUEDE": "WHAT YOU WANT IT TO COME TO",
+    "Escoge el PDF del estimado.": "Choose the estimate PDF.",
+    "Número del invoice que paga": "Number of the invoice it pays",
+    "Proyecto largo. Margen 30%.": "Long project. 30% margin.",
+    "Cuando el cliente ya pagó.": "Once the client has paid.",
+    "Falta al menos un renglón.": "At least one line is missing.",
+    "Todavía no hay documentos.": "No documents yet.",
+    "Esa foto no se pudo leer.": "That photo could not be read.",
+    "Ningún proyecto coincide.": "No project matches.",
+    "Otro cobro, lo escribo yo": "Another charge, I'll type it",
+    "Días adicionales de obra": "Additional work days",
+    "Falta el monto recibido.": "The amount received is missing.",
+    "No se pudo subir el PDF.": "The PDF could not be uploaded.",
+    "Revisar antes de generar": "Review before generating",
+    "Suscripción / recurrente": "Subscription / recurring",
+    "nombre legal del cliente": "client legal name",
+    " · 50% al saldo final: ": " · 50% at final balance: ",
+    "Change orders aprobados": "Approved change orders",
+    "Falta decir qué cambia.": "You still have to say what changes.",
+    "La cuota programada es ": "The scheduled installment is ",
+    "Revisa antes de generar": "Check it before generating",
+    "Vencimiento de facturas": "Invoice due terms",
+    "¿Qué vamos a hacer hoy?": "What are we doing today?",
+    " No lo mandes todavia.": " Don't send it yet.",
+    "Al proyecto le falta: ": "The project is missing: ",
+    "Coincide con la cuota.": "Matches the installment.",
+    "Concepto del descuento": "What the discount is for",
+    "Estimado que incorpora": "Estimate it incorporates",
+    "Número de confirmación": "Confirmation number",
+    "Reformular el estimado": "Rework the estimate",
+    "Valor del contrato ($)": "Contract amount ($)",
+    "Change orders previos": "Previous change orders",
+    "Hacer un change order": "New change order",
+    "Modificar un estimado": "Change an estimate",
+    "dirección del cliente": "client address",
+    " emitido y guardado.": " issued and saved.",
+    "Cuelga del contrato.": "Hangs off the contract.",
+    "Dirección de la obra": "Job address",
+    "Facturado a la fecha": "Invoiced to date",
+    "Qué cambia y por qué": "What changes and why",
+    "Vienes del estimado ": "Coming from estimate ",
+    ". ¿De qué se trata?": ". What is it about?",
+    "El PDF del estimado": "The estimate PDF",
+    "Número del estimado": "Estimate number",
+    "Pantallazo del pago": "Payment screenshot",
+    "Quitar esta partida": "Remove this item",
+    "Quitar este renglón": "Remove this line",
+    "Subir el PDF ahora…": "Upload the PDF now…",
+    "Título del estimado": "Estimate title",
+    "¿Para qué proyecto?": "Which project?",
+    "Cobrado a la fecha": "Collected to date",
+    "Fecha del contrato": "Contract date",
+    "Fecha del estimado": "Estimate date",
+    "Fecha en que entró": "Date it came in",
+    "Monto recibido ($)": "Amount received ($)",
+    "No se pudo cargar ": "Couldn't load ",
+    "Por qué se le baja": "Why it's being discounted",
+    "Qué cuota se cobra": "Which installment",
+    "Sale del estimado ": "From estimate ",
+    "Secciones anuladas": "Sections voided",
+    "Valor del contrato": "Contract amount",
+    "fecha del contrato": "contract date",
+    "Últimos documentos": "Latest documents",
+    "Contrato original": "Original contract",
+    "ESTE CHANGE ORDER": "THIS CHANGE ORDER",
+    "Este change order": "This change order",
+    "Fecha del invoice": "Invoice date",
+    "Hacer el contrato": "New contract",
+    "Hacer un estimado": "New estimate",
+    "Lo que NO incluye": "What it does NOT include",
+    "Ninguno coincide.": "None match.",
+    "No pude abrirlo. ": "I couldn't open it. ",
+    "No pude armarlo. ": "I couldn't build it. ",
+    "No se pudo abrir.": "It could not be opened.",
+    "Número del cheque": "Check number",
+    "Que Nelly lo arme": "Let Nelly build it",
+    "Resumen de cuenta": "Account summary",
+    "Sale del estimado": "From estimate",
+    "Subir un estimado": "Upload an estimate",
+    "50% a la firma: ": "50% at signing: ",
+    "Días adicionales": "Additional days",
+    "Entrega estimada": "Estimated finish",
+    "Hacer un invoice": "New invoice",
+    "Hacer un receipt": "New receipt",
+    "Invoice que paga": "Invoice it pays",
+    "Quitar esta foto": "Remove this photo",
+    "Rango encontrado": "Range found",
+    "Razón del cambio": "Reason for the change",
+    "Tipo de proyecto": "Project type",
+    "Tipo de servicio": "Service type",
+    " tokens de API.": " API tokens.",
+    "A qué se aplica": "What it applies to",
+    "Cuánto le bajas": "How much you take off",
+    "El espacio está": "The space is",
+    "Estás cobrando ": "You're charging ",
+    "Inicio estimado": "Estimated start",
+    "C · Solo labor": "C · Labor only",
+    "CONTRATO NUEVO": "NEW CONTRACT",
+    "Escoge el PDF.": "Choose the PDF.",
+    "Estimado para ": "Estimate for ",
+    "Falta la firma": "Not signed yet",
+    "Generar el PDF": "Generate the PDF",
+    "Proyecto único": "One-time project",
+    "Qué cuota paga": "Which installment it pays",
+    "TOTAL A COBRAR": "TOTAL TO CHARGE",
+    "sin pantallazo": "no screenshot",
+    ". Ponle otro.": ". Use a different one.",
+    "Agregar fotos": "Add photos",
+    "Cambiar datos": "Change the details",
+    "Falta definir": "Still to decide",
+    "Leads del CRM": "CRM leads",
+    "Que lo rehaga": "Have her redo it",
+    "Qué se agrega": "What is being added",
+    "Subcontratado": "Subcontracted",
+    "Tipo de cobro": "Charge type",
+    " enviado el ": " sent on ",
+    "Abrir el PDF": "Open the PDF",
+    "Confirmación": "Confirmation",
+    "Ojo con esto": "Watch out for this",
+    "Otro renglón": "Another line",
+    "Otros costos": "Other costs",
+    "Qué se cobra": "What is being charged",
+    "Sin proyecto": "No project",
+    "este cliente": "this client",
+    "firmado por ": "signed by ",
+    "Este es el ": "This is ",
+    "Margen 35%.": "35% margin.",
+    "Margen real": "Real margin",
+    "Qué cambiar": "What to change",
+    "Residencial": "Residential",
+    "Se aplica a": "Applies to",
+    "Sí, ya pagó": "Yes, they paid",
+    " de menos.": " too little.",
+    " guardado.": " saved.",
+    "Anular el ": "Void ",
+    "Contactado": "Contacted",
+    "El trabajo": "The work",
+    "Materiales": "Materials",
+    "Pantallazo": "Screenshot",
+    "Qué cambia": "What changes",
+    "Recurrente": "Repeat",
+    "Reformular": "Rework",
+    "Todavía no": "Not yet",
+    "te cuesta ": "costs you ",
+    " personas": " people",
+    " · vence ": " · due ",
+    "Comercial": "Commercial",
+    "Descuento": "Discount",
+    "Estimado ": "Estimate ",
+    "Otro pago": "Another payment",
+    "Proyectos": "Projects",
+    "Renglones": "Lines",
+    "Te cuesta": "Costs you",
+    " de más.": " too much.",
+    " persona": " person",
+    "Borrador": "Draft",
+    "Contrato": "Contract",
+    "Cotizado": "Quoted",
+    "Estimado": "Estimate",
+    "Impuesto": "Tax",
+    "Incluye ": "Includes ",
+    "Lo emite": "Issued by",
+    "Proyecto": "Project",
+    "← Volver": "← Back",
+    "Anulado": "Void",
+    "Cliente": "Client",
+    "Ej: 052": "e.g. 052",
+    "El PDF ": "PDF ",
+    "Emitido": "Issued",
+    "Firmado": "Signed",
+    "Formato": "Format",
+    "Ninguno": "None",
+    "Ocupado": "Occupied",
+    "Perdido": "Lost",
+    "Totales": "Totals",
+    "margen ": "margin ",
+    " obras": " jobs",
+    "Cheque": "Check",
+    "Fecha ": "Date ",
+    "Ganado": "Won",
+    "Método": "Method",
+    "Número": "Number",
+    "Pagado": "Paid",
+    "Pronto": "Soon",
+    "Quitar": "Remove",
+    "Visita": "Visit",
+    " días": " days",
+    " obra": " job",
+    " por ": " for ",
+    "Costo": "Cost",
+    "Fotos": "Photos",
+    "Labor": "Labor",
+    "Notas": "Notes",
+    "Nuevo": "New",
+    "Razón": "Reason",
+    "Saldo": "Balance",
+    "Subir": "Upload",
+    "Vacío": "Empty",
+    "Vence": "Due",
+    " día": " day",
+    "Tipo": "Type",
+    " a ": " to ",
+  };
+  /* De más larga a más corta: así "Estimado para " gana antes que
+     "Estimado" y no queda media frase traducida. */
+  var FRAG = Object.keys(EN).sort(function (a, b) { return b.length - a.length; });
+
+  function ingles() { return !!(P && P.S && P.S.lang === 'en'); }
+
+  function en(s) {
+    if (typeof s !== 'string' || !s || !ingles()) return s;
+    if (EN[s] != null) return EN[s];
+    var pre = '', suf = '', r = s, i, k;
+    for (i = 0; i < FRAG.length; i++) {
+      k = FRAG[i];
+      if (r.length > k.length && r.lastIndexOf(k, 0) === 0) {
+        pre = EN[k]; r = r.slice(k.length); break;
+      }
+    }
+    for (i = 0; i < FRAG.length; i++) {
+      k = FRAG[i];
+      if (r.length > k.length && r.slice(r.length - k.length) === k) {
+        suf = EN[k]; r = r.slice(0, r.length - k.length); break;
+      }
+    }
+    return (pre || suf) ? pre + r + suf : s;
+  }
+
+  /* Solo estos atributos llevan texto que alguien lee. 'class' y los
+     demás se dejan en paz. */
+  var ATTR_TXT = { placeholder: 1, title: 1, alt: 1, 'aria-label': 1 };
+
+  function enHijos(x) {
+    if (typeof x === 'string') return en(x);
+    if (Array.isArray(x)) return x.map(enHijos);
+    return x;
+  }
+
   /* ================= LA PANTALLA ================= */
   var P;   /* window.PS: los ayudantes del portal */
-  var h, fill, modal, toast, run, money, field, ico, empty, t, sb;
+  var h, fill, modal, toast, run, money, field, ico, empty, chip, t, sb;
   function bind() {
     P = window.PS;
-    h = P.h; fill = P.fill; modal = P.modal; toast = P.toast; run = P.run;
-    money = P.money; field = P.field; ico = P.ico; empty = P.empty; t = P.t;
+    fill = P.fill; run = P.run; money = P.money; ico = P.ico; t = P.t;
+
+    /* Aquí es donde Nelly pasa al inglés. Ver en() arriba. */
+    h = function (tag, attrs) {
+      var a = attrs, args = [tag], i;
+      if (attrs) {
+        a = {};
+        Object.keys(attrs).forEach(function (k) {
+          a[k] = (ATTR_TXT[k] && typeof attrs[k] === 'string') ? en(attrs[k]) : attrs[k];
+        });
+      }
+      args.push(a);
+      for (i = 2; i < arguments.length; i++) args.push(enHijos(arguments[i]));
+      return P.h.apply(null, args);
+    };
+    function primero(f) {
+      return function () {
+        var a = Array.prototype.slice.call(arguments);
+        a[0] = en(a[0]);
+        return f.apply(null, a);
+      };
+    }
+    field = primero(P.field);
+    toast = primero(P.toast);
+    modal = primero(P.modal);
+    chip = primero(P.chip);
+    empty = function (a, b) {
+      var r = Array.prototype.slice.call(arguments);
+      r[0] = en(a); r[1] = en(b);
+      return P.empty.apply(null, r);
+    };
+
     sb = window.API && window.API.sb;
   }
 
@@ -1952,7 +2314,7 @@
                 d.total != null ? money(d.total) : '',
                 d.signed_at ? 'firmado por ' + d.signed_name : ''].filter(Boolean).join(' · ')),
               d.pdf_path ? abrir : null),
-            P.chip(falta ? 'Falta la firma' : (ST[d.status] || d.status),
+            chip(falta ? 'Falta la firma' : (ST[d.status] || d.status),
               d.status === 'void' ? 'bad' : falta ? 'warn' : 'ok'));
         }))
       : h('p', { class: 'mut small' }, 'Todavía no hay documentos.');
@@ -2031,7 +2393,9 @@
     if (!pr.client_legal_name) f.push('nombre legal del cliente');
     if (!pr.client_address) f.push('dirección del cliente');
     if (!pr.contract_date) f.push('fecha del contrato');
-    return f;
+    /* Esta lista se une con comas antes de llegar a h(), así que la
+       traducción de la puerta no la alcanza. Se traduce aquí. */
+    return f.map(en);
   }
 
   /* Emite: saca el número, arma el PDF, lo descarga y lo deja guardado. */
