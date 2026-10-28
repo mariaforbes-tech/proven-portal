@@ -583,7 +583,7 @@
     /* Scope primero, chat después. Equipo y horas al final: no son del día a día. */
     /* Selecciones solo para la oficina: es plata del cliente, no algo que Miguel chulee. */
     const panes = ['scope'].concat(isViewer() ? ['selections', 'money'] : [])
-      .concat(['feed', 'materials', 'receipts', 'team']).concat(canTime ? ['time'] : []);
+      .concat(['plans', 'feed', 'materials', 'receipts', 'team']).concat(canTime ? ['time'] : []);
     if (panes.indexOf(S.ptab) < 0) S.ptab = 'scope';
     const body = h('div', { class: 'pbody' });
     const tabs = h('div', { class: 'ptabs', role: 'tablist' }, panes.map((k) => h('button', { type: 'button', role: 'tab', 'aria-selected': S.ptab === k ? 'true' : 'false', class: S.ptab === k ? 'on' : '', onclick: () => { S.ptab = k; viewProject(main, pid); } }, t('pt_' + k))));
@@ -599,6 +599,7 @@
     const go = (tab) => { S.ptab = tab; viewProject(main, pid); };
     if (S.ptab === 'scope') scopePane(body, p, names, myRole, go);
     else if (S.ptab === 'feed') feedPane(body, pid, names, canPost);
+    else if (S.ptab === 'plans') plansPane(body, p);
     else if (S.ptab === 'selections') selectionsPane(body, p, names);
     else if (S.ptab === 'money') moneyPane(body, p);
     else if (S.ptab === 'materials') materialsPane(body, p, names, canPost);
@@ -828,6 +829,76 @@
       field(t('material_title'), f.title), h('div', { class: 'two' }, field(t('qty'), f.qty), field(t('vendor'), f.vendor)),
       h('div', { class: 'two' }, field(t('needed_by'), f.needed), field(t('est_cost') + ' ($)', f.cost)),
       h('div', { class: 'acts' }, m && isStaff() ? h('button', { class: 'btn ghost danger-t', type: 'button', onclick: async () => { if (await askConfirm(t('del_material_q'))) { await API.deleteMaterial(m.id); mo.close(); done(); } } }, t('delete')) : null, save)));
+  }
+
+  /* ---------- PLANOS Y FOTOS ----------
+     Fuera del chat a proposito. Un plano que vive en el chat se hunde
+     bajo cien mensajes y a las tres semanas nadie lo encuentra. */
+  const PF_KINDS = ['plan', 'before', 'during', 'after', 'doc'];
+
+  async function plansPane(box, p) {
+    fill(box, h('div', { class: 'spin' }));
+    let files = [];
+    try { files = await API.planFiles(p.id); } catch (e) { fill(box, empty(errText(e))); return; }
+
+    const paths = files.map((f) => f.file_path).filter(Boolean);
+    let urls = {};
+    try { urls = paths.length ? await API.urls(paths) : {}; } catch (e) { urls = {}; }
+
+    const subir = (kind) => {
+      const inp = h('input', { type: 'file', accept: 'image/*,application/pdf', multiple: true, hidden: true });
+      inp.onchange = async () => {
+        const list = [...(inp.files || [])];
+        if (!list.length) return;
+        toast(t('pf_sending'));
+        try {
+          for (const file of list) {
+            await API.savePlanFile({ project_id: p.id, kind, file, for_client: kind === 'before' });
+          }
+          toast(t2('saved')); viewProject(document.getElementById('main'), p.id);
+        } catch (e) { toast(errText(e), true); }
+      };
+      box.append(inp); inp.click();
+    };
+
+    const cabeza = h('div', { class: 'row gap wrap mb' },
+      PF_KINDS.map((k) => h('button', { class: 'btn ghost sm', type: 'button',
+        onclick: () => subir(k) }, ico('plus', 15), t('pf_' + k))));
+
+    function tarjeta(f) {
+      const u = urls[f.file_path];
+      const esImg = /\.(png|jpe?g|webp|gif|heic)$/i.test(f.file_name || '') || /image/.test(f.file_name || '');
+      const ver = u ? h('a', { class: 'lnk', href: u, target: '_blank', rel: 'noopener noreferrer' }, t('pf_open')) : null;
+      const sw = switchEl(f.for_client, async (v) => {
+        try { await API.updatePlanFile(f.id, { for_client: v }); f.for_client = v; toast(t('saved')); }
+        catch (e) { toast(errText(e), true); }
+      }, t('pf_client'));
+      const del = h('button', { class: 'ib', type: 'button', 'aria-label': t('delete'),
+        onclick: async () => {
+          if (!(await askConfirm(t('pf_del_q'), t('delete')))) return;
+          try { await API.deletePlanFile(f.id); viewProject(document.getElementById('main'), p.id); }
+          catch (e) { toast(errText(e), true); }
+        } }, ico('x', 16));
+      return h('div', { class: 'pfcard' },
+        (esImg && u) ? h('a', { href: u, target: '_blank', rel: 'noopener noreferrer' },
+            h('img', { src: u, alt: f.file_name || '', loading: 'lazy' }))
+          : h('div', { class: 'pfdoc' }, ico('file', 26)),
+        h('div', { class: 'pfb' },
+          h('b', null, f.title || f.file_name || t('pf_' + f.kind)),
+          h('small', null, t('pf_' + f.kind) + ' · ' + fDate(f.created_at, { month: 'short', day: 'numeric' })),
+          h('div', { class: 'row gap' }, ver, sw, del)));
+    }
+
+    const grupos = PF_KINDS.map((k) => {
+      const mios = files.filter((f) => f.kind === k);
+      if (!mios.length) return null;
+      return h('section', { class: 'mb' },
+        h('h3', null, t('pf_' + k)),
+        h('div', { class: 'pfgrid' }, mios.map(tarjeta)));
+    }).filter(Boolean);
+
+    fill(box, cabeza,
+      grupos.length ? grupos : empty(t('pf_none'), t('pf_none_sub')));
   }
 
   /* ---------- SELECCIONES DEL CLIENTE ----------

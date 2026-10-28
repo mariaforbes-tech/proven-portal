@@ -553,3 +553,16 @@ ul.bul li{margin:4px 0;line-height:1.45}
 .cons input{flex:none;width:19px;height:19px;margin-top:1px;accent-color:var(--navy)}
 .card.warnbox{background:#FBF0D8;border-color:#E6D49B}
 .card.warnbox h3{color:#7A5A0E}
+
+/* ---------- planos y fotos del proyecto ---------- */
+.pfgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
+.pfcard{border:1px solid var(--hair);border-radius:var(--r2);overflow:hidden;background:#fff;
+  display:flex;flex-direction:column}
+.pfcard img{width:100%;aspect-ratio:4/3;object-fit:cover;display:block;background:#F2F0EA}
+/* Un plano se mira, no se decora: el PDF muestra su icono y su nombre. */
+.pfdoc{aspect-ratio:4/3;display:flex;align-items:center;justify-content:center;
+  background:#F6F4EE;color:var(--mut)}
+.pfb{padding:10px 12px;display:grid;gap:3px}
+.pfb b{font-size:.93rem;line-height:1.3;word-break:break-word}
+.pfb small{color:var(--mut);font-size:.79rem}
+.pfb .row{margin-top:6px;align-items:center}

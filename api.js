@@ -189,6 +189,26 @@
       },
       deleteOption: (id) => q(sb.from('selection_options').delete().eq('id', id)),
 
+      /* --- planos y fotos del antes --- */
+      planFiles: (pid) => q(sb.from('project_files').select('*').eq('project_id', pid).order('created_at', { ascending: false })),
+      async savePlanFile(f) {
+        /* Un plano se encoge mucho menos que una foto: si lo apretamos
+           como una foto de obra, los numeros de las cotas dejan de leerse. */
+        const esPlano = f.kind === 'plan' || f.kind === 'doc';
+        const file = /^image\//.test(f.file.type)
+          ? await shrink(f.file, esPlano ? 2400 : 1600, esPlano ? 0.92 : 0.82)
+          : f.file;
+        const path = f.project_id + '/plans/' + uid() + '-' + safeName(file.name || 'archivo');
+        const { error } = await sb.storage.from('project-files').upload(path, file, { contentType: file.type });
+        if (error) throw error;
+        return q(sb.from('project_files').insert({
+          project_id: f.project_id, kind: f.kind, title: f.title || '',
+          file_path: path, file_name: file.name || '', for_client: !!f.for_client
+        }));
+      },
+      updatePlanFile: (id, patch) => q(sb.from('project_files').update(patch).eq('id', id)),
+      deletePlanFile: (id) => q(sb.from('project_files').delete().eq('id', id)),
+
       /* gastos fijos */
       fixed: () => q(sb.from('fixed_costs').select('*').order('title')),
       saveFixed: (f) => f.id ? q(sb.from('fixed_costs').update(f).eq('id', f.id)) : q(sb.from('fixed_costs').insert(f)),
@@ -511,6 +531,19 @@
         save();
       },
       async deleteOption(id) { need(staff()); DB.options = (DB.options || []).filter((o) => o.id !== id); save(); },
+
+      /* planos y fotos, en demo */
+      async planFiles(pid) { return wait((DB.pfiles || []).filter((f) => f.project_id === pid)); },
+      async savePlanFile(f) {
+        need(staff());
+        DB.pfiles = DB.pfiles || [];
+        DB.pfiles.unshift({ id: uid(), project_id: f.project_id, kind: f.kind, title: f.title || '',
+          file_path: '', file_name: (f.file && f.file.name) || '', for_client: !!f.for_client,
+          created_at: new Date().toISOString() });
+        save();
+      },
+      async updatePlanFile(id, patch) { need(staff()); const x = (DB.pfiles || []).find((y) => y.id === id); if (x) Object.assign(x, patch); save(); },
+      async deletePlanFile(id) { need(staff()); DB.pfiles = (DB.pfiles || []).filter((f) => f.id !== id); save(); },
 
       async fixed() { need(viewer()); return wait(DB.fixed.slice().sort((a, b) => a.title.localeCompare(b.title))); },
       async saveFixed(f) { need(finance()); if (f.id) Object.assign(DB.fixed.find((x) => x.id === f.id), f); else DB.fixed.push({ ...f, id: uid(), created_at: new Date().toISOString() }); save(); },
