@@ -1731,6 +1731,15 @@
      Lo que no esté en la tabla sale tal cual: el nombre de un proyecto o
      de un cliente nunca se toca. */
   var EN = {
+    "Lo demás se completa después desde Projects.": "The rest is filled in later from Projects.",
+    "Escoge el proyecto y te pido el PDF.": "Pick the project and I'll ask you for the PDF.",
+    "Falta el nombre del proyecto.": "The project name is missing.",
+    "Nombre del proyecto": "Project name",
+    "Cancelar subida": "Cancel upload",
+    "Proyecto creado.": "Project created.",
+    "Crear y seguir": "Create and continue",
+    "Nuevo proyecto": "New project",
+    "Dirección": "Address",
     "Este proyecto no tiene contrato firmado ni estimado escogido. El invoice sale sin respaldo de ninguno de los dos: escoge el estimado arriba si existe.": "This project has no signed contract and no estimate selected. The invoice goes out backed by neither: pick the estimate above if there is one.",
     " de viaje y parqueo, repartidos dentro del costo de la labor. El cliente no los ve como renglón: tu Rate Sheet dice que van incluidos en el día.": " of travel and parking, spread inside the labor cost. The client never sees them as a line item: your Rate Sheet says they are included in the day.",
     "Qué hay que cambiar. Por ejemplo: quita toda la demolición del baño, el cliente la hace él. O: separa el piso como opción aparte.": "What has to change. For example: drop all the bathroom demolition, the client is doing it himself. Or: split the flooring out as a separate option.",
@@ -2351,6 +2360,28 @@
   function pickProject(main, ctx, title, next) {
     var box = h('div', { class: 'list' });
     var find = h('input', { type: 'search', placeholder: 'Buscar por proyecto, cliente o dirección…' });
+
+    /* Dos cosas que faltaban justo aquí, que es donde se piensan.
+       Si el trabajo es nuevo el proyecto no existe todavía, y mandarla a
+       la pestaña de Projects a crearlo y volver la saca del camino a
+       mitad de una tarea. Y si el estimado se hizo por fuera, este es el
+       momento en que uno se acuerda de que hay que subirlo. */
+    var modo = { subir: false };
+    var aviso = h('p', { class: 'mut sm', hidden: true }, 'Escoge el proyecto y te pido el PDF.');
+    var sube = h('button', { class: 'btn ghost sm', type: 'button' }, 'Subir un estimado');
+    sube.onclick = function () {
+      modo.subir = !modo.subir;
+      aviso.hidden = !modo.subir;
+      fill(sube, modo.subir ? 'Cancelar subida' : 'Subir un estimado');
+    };
+    var nuevo = h('button', { class: 'btn ghost sm', type: 'button' }, ico('plus', 15), 'Nuevo proyecto');
+    nuevo.onclick = function () { nuevoProyecto(ctx, elegido); };
+
+    function elegido(p2) {
+      if (modo.subir) { show(function () { estimateUploadForm(main, p2); }); return; }
+      next(p2);
+    }
+
     function draw() {
       var s2 = find.value.trim().toLowerCase();
       var list = ctx.projects.filter(function (p2) {
@@ -2362,7 +2393,7 @@
           h('span', null, h('b', null, p2.name),
             h('small', null, [p2.client, p2.address].filter(Boolean).join(' · '))),
           h('b', null, p2.contract != null ? money(p2.contract) : '—'));
-        el.onclick = function () { next(p2); };
+        el.onclick = function () { elegido(p2); };
         return el;
       }) : h('p', { class: 'mut small' }, 'Ningún proyecto coincide.'));
     }
@@ -2372,7 +2403,42 @@
       h('div', { class: 'sech' }, h('h2', null, title), backBtn()),
       robot('¿Para qué proyecto?', 'saludo'),
       h('div', { class: 'mb' }, find),
+      h('div', { class: 'acts' }, nuevo, sube),
+      aviso,
       box);
+  }
+
+  /* Crear el proyecto sin salirse de Nelly. Tres campos: el nombre, de
+     quién es y dónde. Lo demás se completa después desde Projects, y
+     mientras tanto ya se puede emitir el documento. */
+  function nuevoProyecto(ctx, luego) {
+    var fn = h('input', { required: true });
+    var fc = h('input');
+    var fa = h('input', { autocomplete: 'off' });
+    var save = h('button', { class: 'btn', type: 'submit' }, 'Crear y seguir');
+    var m = modal('Nuevo proyecto', h('form', { class: 'mb frm', onsubmit: function (e) {
+      e.preventDefault();
+      var nom = fn.value.trim();
+      if (!nom) { toast('Falta el nombre del proyecto.', true); fn.focus(); return; }
+      run(save, function () {
+        return Promise.resolve(P.API.saveProject({
+          name: nom, client: fc.value.trim(), address: fa.value.trim(),
+          status: 'active', starts_on: '', ends_on: '', contract: null, notes: ''
+        }, [])).then(function (id) {
+          var pr = { id: id, name: nom, client: fc.value.trim(),
+            address: fa.value.trim(), status: 'active', contract: null };
+          ctx.projects.unshift(pr);
+          m.close();
+          toast('Proyecto creado.');
+          luego(pr);
+        });
+      });
+    } },
+      field('Nombre del proyecto', fn),
+      field('Cliente', fc),
+      field('Dirección', fa),
+      h('p', { class: 'mut sm' }, 'Lo demás se completa después desde Projects.'),
+      h('div', { class: 'acts' }, save)));
   }
 
   /* ---------- lo que comparten los dos documentos ---------- */
