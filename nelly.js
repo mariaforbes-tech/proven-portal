@@ -1134,10 +1134,29 @@
     /* El descuento lo hace el código, no Nelly. Cuando se lo pedíamos a
        ella en Reformular, recalculaba el trabajo entero y un descuento de
        $150 salía de $260. Aquí 150 son 150. */
-    var desc = { monto: 0, texto: 'Descuento' };
+    var desc = { monto: 0, texto: 'Descuento', modo: 'monto' };
+    var dModo = h('select', null,
+      h('option', { value: 'monto' }, 'Escribo cuánto le bajo'),
+      h('option', { value: 'final' }, 'Escribo en cuánto quiero que quede'));
     var dMonto = h('input', { type: 'number', step: '0.01', min: '0', value: '0' });
-    var dTexto = h('input', { value: desc.texto, placeholder: 'Por qu\u00e9 se le baja' });
+    var dFinal = h('input', { type: 'number', step: '0.01', min: '0', value: '0' });
+    var dTexto = h('input', { value: desc.texto, placeholder: 'Por qué se le baja' });
+    var cajaMonto = field('Cuánto le bajo', dMonto);
+    var cajaFinal = field('Precio final', dFinal);
+    cajaFinal.hidden = true;
+
+    dModo.onchange = function () {
+      desc.modo = dModo.value;
+      cajaMonto.hidden = desc.modo !== 'monto';
+      cajaFinal.hidden = desc.modo !== 'final';
+      recalc();
+      (desc.modo === 'monto' ? dMonto : dFinal).focus();
+    };
+    /* Los dos campos se escriben solos entre ellos, pero nunca el que la
+       persona está usando: pisarle lo que escribe mientras teclea es la
+       forma más rápida de volver loco a cualquiera. */
     dMonto.oninput = function () { desc.monto = Math.max(0, Number(dMonto.value) || 0); recalc(); };
+    dFinal.oninput = function () { recalc(); };
     dTexto.oninput = function () { desc.texto = dTexto.value.trim() || 'Descuento'; };
 
     function recalc() {
@@ -1147,7 +1166,20 @@
           .reduce(function (a, f) { return a + (Number(f.precio) || 0); }, 0) * 100) / 100;
       });
       var bruto = Math.round(GRUPOS.reduce(function (a, g) { return a + por[g.k]; }, 0) * 100) / 100;
-      var dto = Math.min(desc.monto, bruto);
+      var dto;
+      if (desc.modo === 'final') {
+        /* Ella fija el precio final y el descuento es lo que sobre. Si
+           después cambia un renglón, el final se queda donde lo puso y el
+           descuento se acomoda solo. */
+        var fin = Math.max(0, Number(dFinal.value) || 0);
+        dto = Math.max(0, Math.round((bruto - fin) * 100) / 100);
+        if (dto > bruto) dto = bruto;
+        dMonto.value = dto.toFixed(2);
+        desc.monto = dto;
+      } else {
+        dto = Math.min(desc.monto, bruto);
+        dFinal.value = (Math.round((bruto - dto) * 100) / 100).toFixed(2);
+      }
       var total = Math.round((bruto - dto) * 100) / 100;
       var costo = Math.round(filas.reduce(function (a, f) { return a + (Number(f.costo) || 0); }, 0) * 100) / 100;
       var mr = total > 0 ? Math.round(((total - costo) / total) * 1000) / 10 : 0;
@@ -1275,8 +1307,9 @@
       lista('Falta definir', res.preguntas),
       cuerpo,
       h('div', { class: 'card' }, h('h3', null, 'Totales'), totBox,
-        h('div', { class: 'two mt6' }, field('Descuento', dMonto), field('Concepto', dTexto)),
-        h('p', { class: 'mut sm' }, 'Lo que escribas aqu\u00ed se resta tal cual del total. Ni un peso m\u00e1s.'),
+        h('div', { class: 'mt6' }, field('Descuento', dModo)),
+        h('div', { class: 'two' }, cajaMonto, cajaFinal, field('Concepto', dTexto)),
+        h('p', { class: 'mut sm' }, 'Lo que pongas aquí lo resta el código, no Nelly. Si escribes 150, baja 150.'),
         (res.logistica && res.logistica.costo_viaje)
           ? h('p', { class: 'mut sm' }, 'Incluye ' + money(res.logistica.costo_viaje)
               + ' de viaje y parqueo, repartidos dentro del costo de la labor. El cliente no los ve como rengl\u00f3n: tu Rate Sheet dice que van incluidos en el d\u00eda.')
