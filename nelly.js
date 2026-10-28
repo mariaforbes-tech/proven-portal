@@ -820,7 +820,7 @@
           toast(row && row.pdf_path
             ? 'Contrato generado. El cliente ya lo puede firmar en su portal.'
             : 'Contrato generado, pero no se pudo guardar en el portal: el cliente no lo va a ver.');
-          view(main);
+          return sincronizar(pr).then(function () { view(main); });
         });
       });
     };
@@ -1228,6 +1228,11 @@
           return subirEstimado(pr, { num: num, file: file, total: tot, titulo: nom,
             cliente: fCli.value.trim(), direccion: fDir.value.trim(),
             renglones: Array.isArray(d.renglones) ? d.renglones : [] })
+            .then(function (row) {
+              /* El proyecto acaba de nacer: que aparezca ya en el tracker,
+                 aunque ella se salga antes de emitir el invoice. */
+              return sincronizar(pr).then(function () { return row; });
+            })
             .then(function (row) {
               return Promise.all([
                 D.payments(pr.id).catch(function () { return []; }),
@@ -1793,7 +1798,7 @@
           toast(row && row.pdf_path
             ? 'Change order generado. El cliente ya lo puede firmar en su portal.'
             : 'Change order generado, pero no se pudo guardar en el portal: el cliente no lo va a ver.');
-          view(main);
+          return sincronizar(pr).then(function () { view(main); });
         });
       });
     };
@@ -1851,6 +1856,7 @@
      Lo que no esté en la tabla sale tal cual: el nombre de un proyecto o
      de un cliente nunca se toca. */
   var EN = {
+    "Quedó guardado, pero el Project Tracker no se actualizó: ": "It was saved, but the Project Tracker was not updated: ",
     "El invoice quedó guardado, pero no pude crear el cobro: ": "The invoice was saved, but I couldn't create the receivable: ",
     "Súbeme el PDF y yo saco de ahí el proyecto, el cliente y el total.": "Send me the PDF and I'll pull the project, the client and the total out of it.",
     "No pude sacar el número del PDF. Escríbelo.": "I couldn't get the number from the PDF. Type it in.",
@@ -2614,8 +2620,12 @@
           };
           if (extra) Object.keys(extra).forEach(function (k) { row[k] = extra[k]; });
           return D.save(row).then(function (guardado) {
-            if (kind !== 'invoice') return guardado;
-            return cobrar(pr, v, extra, num).then(function () { return guardado; })
+            if (kind !== 'invoice') {
+              return sincronizar(pr).then(function () { return guardado; });
+            }
+            return cobrar(pr, v, extra, num)
+              .then(function () { return sincronizar(pr); })
+              .then(function () { return guardado; })
               .catch(function (e) {
                 /* El invoice ya quedó guardado: tumbar todo por esto sería
                    peor. Pero callarlo es peor todavía, porque ella creería
@@ -2627,6 +2637,26 @@
         });
       });
     });
+  }
+
+  /* El Project Tracker de Google se actualiza solo.
+     Pasar estas cifras a mano es como se terminan teniendo dos verdades
+     distintas sobre el mismo proyecto. Se llama después de guardar, no
+     antes: si la hoja falla, el documento ya está a salvo y lo único que
+     se pierde es el reflejo, que se puede volver a mandar.
+
+     No se le avisa a nadie cuando sale bien, porque es lo normal. Cuando
+     falla sí, para que nadie mire la hoja creyendo que está al día. */
+  function sincronizar(pr) {
+    if (!pr || !pr.id) return Promise.resolve();
+    return Promise.resolve(sb.functions.invoke('tracker', { body: { project_id: pr.id } }))
+      .then(function (r) {
+        if (r && r.error) throw r.error;
+        if (r && r.data && r.data.error) throw new Error(r.data.error);
+      })
+      .catch(function (e) {
+        toast('Quedó guardado, pero el Project Tracker no se actualizó: ' + P.errText(e), true);
+      });
   }
 
   /* Un invoice emitido es plata que el cliente ya debe. Si solo queda
