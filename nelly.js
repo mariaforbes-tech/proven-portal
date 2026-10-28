@@ -1131,21 +1131,9 @@
       var n = num.value.trim();
       if (!n) { toast('Falta el número del estimado.', true); return; }
       run(go, function () {
-        return keepFile(pr, 'estimate', n, f).then(function (path) {
-          return D.save({
-            kind: 'estimate', number: n, project_id: pr.id,
-            status: 'issued', issued_on: P.dkey(new Date()),
-            body: { externo: true, archivo: f.name }, pdf_path: path
-          });
-        }).then(function () {
+        return subirEstimado(pr, { num: n, file: f }).then(function () {
           toast('Estimado ' + n + ' guardado.');
           view(main);
-        }).catch(function (e) {
-          var t = P.errText(e);
-          /* El choque de número es el error que de verdad va a pasar, y el
-             mensaje crudo de Postgres no le dice nada a nadie. */
-          throw new Error(/duplicate|unique/i.test(t)
-            ? 'Ya hay un estimado con el número ' + n + '. Ponle otro.' : t);
         });
       });
     };
@@ -1826,6 +1814,24 @@
     });
   }
 
+  /* Guardar en el portal un estimado hecho por fuera. Lo usan los dos
+     caminos: el del menú y el de dentro del invoice. */
+  function subirEstimado(pr, sube) {
+    return keepFile(pr, 'estimate', sube.num, sube.file).then(function (path) {
+      return D.save({
+        kind: 'estimate', number: sube.num, project_id: pr.id,
+        status: 'issued', issued_on: P.dkey(new Date()),
+        body: { externo: true, archivo: sube.file.name }, pdf_path: path
+      });
+    }).catch(function (e) {
+      /* El choque de número es el error que de verdad va a pasar, y el
+         mensaje crudo de Postgres no le dice nada a nadie. */
+      var t2 = P.errText(e);
+      throw new Error(/duplicate|unique/i.test(t2)
+        ? 'Ya hay un estimado con el número ' + sube.num + '. Ponle otro.' : t2);
+    });
+  }
+
   var MONTHS = ['January','February','March','April','May','June','July',
     'August','September','October','November','December'];
   function longDate(iso) {
@@ -2091,8 +2097,24 @@
         ests.map(function (x) {
           return h('option', { value: x.number },
             'Estimado ' + x.number + (x.issued_on ? ' · ' + x.issued_on : ''));
-        })));
+        }),
+        [h('option', { value: '__sube' }, 'Subir el PDF ahora…')]));
     estSel.value = st.estimate_number || '';
+
+    /* Si el estimado no está en el portal, se sube aquí mismo. Hacerla
+       salir al menú, subirlo y volver a entrar al invoice son tres viajes
+       para una sola cosa. Los dos campos solo aparecen si los va a usar. */
+    var upFile = h('input', { type: 'file', accept: 'application/pdf,.pdf' });
+    var upNum = h('input', { placeholder: 'Ej: 052' });
+    var upBox = h('div', { class: 'two', hidden: true },
+      field('El PDF del estimado', upFile), field('Número del estimado', upNum));
+    estSel.onchange = function () { upBox.hidden = estSel.value !== '__sube'; };
+    upFile.onchange = function () {
+      var f = upFile.files && upFile.files[0];
+      if (!f || upNum.value.trim()) return;
+      var mm = String(f.name).replace(/\.pdf$/i, '').match(/(\d{2,})(?!.*\d)/);
+      if (mm) upNum.value = mm[1];
+    };
 
     var open = pays.filter(function (x) { return !x.paid_on; });
     var sel = h('select', null,
@@ -2145,6 +2167,10 @@
       var items = Array.prototype.map.call(rowsBox.children, function (el) { return el._read(); })
         .filter(function (i) { return i.desc || i.total; });
       if (!items.length) { toast('Falta al menos un renglón.', true); return; }
+      var sube = estSel.value === '__sube'
+        ? { file: upFile.files && upFile.files[0], num: upNum.value.trim() } : null;
+      if (sube && !sube.file) { toast('Escoge el PDF del estimado.', true); return; }
+      if (sube && !sube.num) { toast('Falta el número del estimado.', true); return; }
       var sub = items.reduce(function (a, i) { return a + i.total; }, 0);
       var tax = Number(ftax.value) || 0;
       var v = {
@@ -2152,7 +2178,7 @@
         items: items, subtotal: Math.round(sub * 100) / 100, tax: tax,
         total: Math.round((sub + tax) * 100) / 100,
         notes: fnotes.value.trim(), payment_id: sel.value || null, reason: st.reason,
-        estimate_number: estSel.value || ''
+        estimate_number: sube ? sube.num : (estSel.value || ''), sube: sube
       };
       show(function () { invoiceConfirm(main, ctx, pr, pays, sum, v); });
     };
@@ -2164,6 +2190,7 @@
       summaryCard(sum),
       h('div', { class: 'card' },
         h('div', { class: 'two' }, field('Qué cuota se cobra', sel), field('Sale del estimado', estSel)),
+        upBox,
         h('div', { class: 'two' }, field('Tipo de cobro', forSel), field('Impuesto sobre materiales ($)', ftax)),
         h('div', { class: 'two' }, field('Fecha del invoice', fdate), field('Vence', fdue)),
         h('div', { class: 'sech' }, h('h3', null, 'Renglones'), add),
@@ -2188,6 +2215,14 @@
       }
       run(gen, function () {
         v.reason = reason.value.trim();
+        /* Si viene un estimado para subir, primero queda guardado: el
+           invoice no puede citar un número que no existe en el portal. */
+        var antes = v.sube ? subirEstimado(pr, v.sube).then(function () { v.sube = null; })
+          : Promise.resolve();
+        return antes.then(function () { return generar(); });
+      });
+
+      function generar() {
         var d = base(ctx, pr);
         d.date = longDate(v.date); d.due = longDate(v.due);
         d.for = v.for; d.co_number = '';
@@ -2207,7 +2242,7 @@
             toast('Invoice emitido. El PDF se descargó.');
             view(main);
           });
-      });
+      }
     };
 
     fill(main,
