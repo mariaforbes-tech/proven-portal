@@ -395,12 +395,469 @@
     return d;
   }
 
+
+  /* ================= DOCUMENTOS ARMADOS DESDE PLANTILLA =================
+     El contrato y el change order se pintan desde los bloques guardados en
+     la base. Nelly no redacta: rellena y marca casillas. */
+
+  /* Devuelve el valor de una etiqueta del formulario, o null si esa celda
+     no es una etiqueta conocida. */
+  function etiqueta(celda, v) {
+    var vals = v.labels || {}, k = nmz(celda), hit = null;
+    Object.keys(vals).forEach(function (lab) { if (hit === null && nmz(lab) === k) hit = vals[lab]; });
+    return hit;
+  }
+
+  function nmz(s) {
+    return String(s || '').replace(/☐|☑|☒/g, '')
+      .replace(/\s+/g, ' ').trim().toLowerCase();
+  }
+
+  /* Un recuadro de aviso, de los que el contrato trae en medio. */
+  Sheet.prototype.callout = function (txt) {
+    var sz = 8.5;
+    this.font(sz, false, NAVY);
+    var lines = this.d.splitTextToSize(txt, CW - 28);
+    var hgt = lines.length * (sz + 2.5) + 20;
+    this.room(hgt + 8);
+    this.d.setFillColor(246, 244, 238);
+    this.d.setDrawColor(GOLD[0], GOLD[1], GOLD[2]);
+    this.d.setLineWidth(1.2);
+    this.d.rect(M, this.y - 8, CW, hgt, 'F');
+    this.d.line(M, this.y - 8, M, this.y - 8 + hgt);
+    this.font(sz, false, NAVY).d.text(lines, M + 14, this.y + 6);
+    this.y += hgt + 6;
+    return this;
+  };
+
+  /* Una casilla del contrato: cuadro dibujado, marcado si corresponde. */
+  Sheet.prototype.box = function (x, label, on, w) {
+    var sz = 8.5;
+    this.d.setDrawColor(NAVY[0], NAVY[1], NAVY[2]);
+    this.d.setLineWidth(0.8);
+    this.d.rect(x, this.y - 7, 8, 8);
+    if (on) {
+      this.d.setFillColor(NAVY[0], NAVY[1], NAVY[2]);
+      this.d.rect(x + 2, this.y - 5, 4, 4, 'F');
+    }
+    this.font(sz, on).d.text(this.d.splitTextToSize(label, w - 16), x + 14, this.y);
+    return this;
+  };
+
+  /* Una tabla genérica de la plantilla. */
+  Sheet.prototype.tpl_table = function (rows, v) {
+    var self = this;
+    if (!rows.length) return this;
+
+    /* Una sola columna en todas las filas: es un aviso, no una tabla. */
+    var unaCol = rows.every(function (r) { return r.length === 1; });
+    if (unaCol) {
+      return this.callout(rows.map(function (r) { return r[0]; }).join('\n'));
+    }
+
+    var cols = Math.max.apply(null, rows.map(function (r) { return r.length; }));
+    var cw = CW / cols;
+    rows.forEach(function (r, ri) {
+      var esCasilla = r.some(function (c) { return String(c).indexOf('☐') === 0; });
+      var alto = 0, partes = r.map(function (c) {
+        self.font(8.5, ri === 0 && !esCasilla);
+        var lines = self.d.splitTextToSize(String(c || ''), cw - 18);
+        var h2 = lines.length * 11 + 10;
+        if (etiqueta(c, v) !== null && String(c).indexOf('[') < 0) h2 = Math.max(h2, 30);
+        alto = Math.max(alto, h2);
+        return lines;
+      });
+      self.room(alto + 4);
+      if (ri === 0 && !esCasilla) {
+        self.d.setFillColor(248, 247, 243);
+        self.d.rect(M, self.y - 9, CW, alto, 'F');
+      }
+      partes.forEach(function (lines, ci) {
+        var x = M + cw * ci, crudo = String(r[ci] || '');
+        if (crudo.indexOf('☐') === 0) {
+          var label = crudo.replace(/^☐\s*/, '');
+          var on = (v.checked || []).some(function (k) {
+            return nmz(label).indexOf(nmz(k)) === 0;
+          });
+          self.box(x, label, on, cw);
+        } else if (etiqueta(crudo, v) !== null && crudo.indexOf('[') < 0) {
+          /* Es una etiqueta del formulario: va chiquita arriba y el dato
+             debajo, como en una factura. Si no, saldría la etiqueta sola. */
+          self.font(7, true, GREY).d.text(String(crudo).toUpperCase(), x + 4, self.y);
+          self.font(9.5, false, NAVY).d.text(
+            self.d.splitTextToSize(String(etiqueta(crudo, v) || '\u2014'), cw - 18), x + 4, self.y + 12);
+        } else {
+          self.font(8.5, ri === 0).d.text(lines, x + 4, self.y);
+        }
+      });
+      self.y += alto;
+      self.d.setDrawColor(HAIR[0], HAIR[1], HAIR[2]);
+      self.d.setLineWidth(0.4);
+      self.d.line(M, self.y - 7, W - M, self.y - 7);
+    });
+    this.y += 8;
+    return this;
+  };
+
+  /* ---------- rellenar ---------- */
+  function mny(n) {
+    return '$' + Number(n || 0).toLocaleString('en-US',
+      { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function fillText(txt, v) {
+    var s2 = String(txt == null ? '' : txt);
+    s2 = s2.replace(/\[ESTIMATE DATE\]/g, v.estimate_date || '________________');
+    s2 = s2.replace(/\[ESTIMATE TITLE \/ ?# ?\]/g, v.estimate_title || '________________');
+    s2 = s2.replace(/\[___\]/g, v.number || '____');
+    if (v.amount != null) s2 = s2.replace(/\$\[AMOUNT\]/g, mny(v.amount));
+    return s2.replace(/\$\[AMOUNT\]/g, '$________');
+  }
+
+  /* Las filas con etiqueta conocida se llenan por el nombre de la etiqueta,
+     no por su posición: si mañana se mueve una fila, sigue funcionando. */
+  function fillRows(rows, v) {
+    var vals = v.labels || {}, items = v.items || [];
+    var out = [], puestos = false;
+    rows.forEach(function (r) {
+      var primero = String(r[0] || '');
+      if (/^\[ITEM \d/.test(primero)) {
+        if (puestos) return;
+        puestos = true;
+        items.forEach(function (it) {
+          out.push([it.desc, it.qty == null ? '' : String(it.qty),
+            it.unit == null ? '' : mny(it.unit), mny(it.total)]);
+        });
+        return;
+      }
+      /* Solo se reemplaza la última celda cuando esa celda es un hueco
+         ($[AMOUNT], [___]). Si la fila es etiqueta + etiqueta, se deja
+         como está y cada celda se llena por su cuenta más adelante. */
+      var ultima = String(r[r.length - 1] || '');
+      var esHueco = /\[[^\]]*\]|_{3,}/.test(ultima);
+      var k = nmz(primero), hit = null;
+      if (esHueco) Object.keys(vals).forEach(function (lab) {
+        if (hit === null && k === nmz(lab)) hit = vals[lab];
+      });
+      if (hit !== null) {
+        var copia = r.slice();
+        copia[copia.length - 1] = typeof hit === 'number' ? mny(hit) : String(hit);
+        out.push(copia.map(function (c, i) {
+          return i === copia.length - 1 ? c : fillText(c, v);
+        }));
+      } else {
+        out.push(r.map(function (c) { return fillText(c, v); }));
+      }
+    });
+    return out;
+  }
+
+  function secNum(txt) {
+    var m2 = String(txt).match(/^(\d+(?:\.\d+)?)/);
+    return m2 ? m2[1] : null;
+  }
+
+  /** Arma el PDF desde los bloques de la plantilla. */
+  function buildFromTemplate(v, img, blocks) {
+    var d = new window.jspdf.jsPDF({ unit: 'pt', format: 'letter' });
+    var s = new Sheet(d, img, v.co);
+    s.head(v.title, v.number, v.rows || [], v.sub);
+
+    var anular = v.blank || {};      // { '4.2': 'Not applicable to this Agreement.' }
+    var saltando = null;
+
+    var saltarTexto = [nmz(v.title), nmz(v.sub)];
+    blocks.forEach(function (b) {
+      /* El título y el subtítulo ya salen arriba: repetirlos sobra. */
+      if (b.x && saltarTexto.indexOf(nmz(b.x)) >= 0) return;
+      if (b.t === 'h1' || b.t === 'h2') {
+        var n = secNum(b.x);
+        if (saltando) {
+          var sigue = n && (n === saltando || n.indexOf(saltando + '.') === 0);
+          if (sigue) return;
+          saltando = null;
+        }
+        s.y += b.t === 'h1' ? 10 : 6;
+        s.room(40);
+        s.font(b.t === 'h1' ? 11 : 9.5, true).d.text(fillText(b.x, v), M, s.y);
+        s.y += b.t === 'h1' ? 5 : 4;
+        if (b.t === 'h1') { s.rule(true); s.y += 10; } else { s.y += 6; }
+        if (n && anular[n]) {
+          s.para(anular[n], 9, false, GREY);
+          saltando = n;
+        }
+        return;
+      }
+      if (saltando) return;
+      if (b.t === 'p') s.para(fillText(b.x, v), 9);
+      else if (b.t === 'tbl') s.tpl_table(fillRows(b.rows, v), v);
+    });
+
+    s.footer();
+    return d;
+  }
+
+
+  /* ================= CONTRATO ================= */
+  function plantilla(kind) {
+    return q(sb.from('doc_templates').select('blocks').eq('kind', kind).maybeSingle())
+      .then(function (r) {
+        if (!r || !r.blocks) throw new Error('Falta la plantilla. ¿Corriste nelly-3-plantillas.sql?');
+        return r.blocks;
+      });
+  }
+
+  function contractFlow(main, ctx) {
+    show(function () { pickProject(main, ctx, 'Contrato', function (pr) {
+      fill(main, h('div', { class: 'spin' }));
+      Promise.all([D.payments(pr.id), plantilla('contract')]).then(function (r) {
+        var pays = r[0] || [], tpl = r[1];
+        show(function () { contractForm(main, ctx, pr, pays, tpl); });
+      }).catch(function (e) { fill(main, empty('Nelly', P.errText(e))); });
+    }); });
+  }
+
+  function contractForm(main, ctx, pr, pays, tpl) {
+    var tipo = h('select', null, [h('option', { value: 'Residential' }, 'Residencial'),
+      h('option', { value: 'Commercial' }, 'Comercial')]);
+    var serv = h('select', null, [h('option', { value: 'One-Time Project' }, 'Proyecto único'),
+      h('option', { value: 'Subscription / Recurring' }, 'Suscripción / recurrente')]);
+    var venc = h('select', null, ['1 Day', '3 Days', '1 Week', '2 Weeks'].map(function (x) {
+      return h('option', { value: x }, x);
+    }));
+    venc.value = '1 Week';
+    var ocup = h('select', null, [h('option', { value: 'VACANT' }, 'Vacío'),
+      h('option', { value: 'OCCUPIED' }, 'Ocupado')]);
+    var esGC = h('input', { type: 'checkbox' });
+    var fecha = h('input', { type: 'date', value: pr.contract_date || P.dkey(new Date()) });
+    var inicio = h('input', { type: 'date', value: pr.starts_on || '' });
+    var fin = h('input', { type: 'date', value: pr.ends_on || '' });
+    var estF = h('input', { type: 'date' });
+    var estT = h('input', { placeholder: 'Firm Estimate #045 (Revised)' });
+    var monto = h('input', { type: 'number', step: '0.01', value: pr.contract == null ? '' : pr.contract });
+
+    var go = h('button', { class: 'btn', type: 'button' }, 'Revisar antes de generar');
+    go.onclick = function () {
+      if (!Number(monto.value)) { toast('Falta el valor del contrato.', true); monto.focus(); return; }
+      var v = {
+        tipo: tipo.value, serv: serv.value, venc: venc.value, ocup: ocup.value,
+        gc: esGC.checked, fecha: fecha.value, inicio: inicio.value, fin: fin.value,
+        est_fecha: estF.value, est_titulo: estT.value.trim(), monto: Number(monto.value)
+      };
+      show(function () { contractConfirm(main, ctx, pr, tpl, v); });
+    };
+
+    fill(main,
+      h('div', { class: 'sech' }, h('h2', null, 'Contrato · ' + pr.name), backBtn()),
+      robot('Marco las casillas y lleno los datos. El texto legal no se toca.'),
+      missing(pr).length ? h('p', { class: 'mut sm warnline' },
+        'Al proyecto le falta: ' + missing(pr).join(', ') + '.') : null,
+      h('div', { class: 'card' },
+        h('div', { class: 'two' }, field('Tipo de proyecto', tipo), field('Tipo de servicio', serv)),
+        h('div', { class: 'two' }, field('Valor del contrato ($)', monto), field('Fecha del contrato', fecha)),
+        h('div', { class: 'two' }, field('Inicio estimado', inicio), field('Entrega estimada', fin)),
+        h('div', { class: 'two' }, field('Fecha del estimado', estF), field('Título del estimado', estT)),
+        h('div', { class: 'two' }, field('Vencimiento de facturas', venc), field('El espacio está', ocup)),
+        h('label', { class: 'fld row gap' }, esGC, h('span', null, 'El cliente es un general contractor')),
+        h('p', { class: 'mut sm' }, 'Si no es suscripción, la sección 4.2 sale como "Not applicable". Lo mismo la 11 si el cliente no es GC.'),
+        h('div', { class: 'acts' }, go)));
+  }
+
+  function contractConfirm(main, ctx, pr, tpl, v) {
+    var blank = {};
+    if (v.serv !== 'Subscription / Recurring') blank['4.2'] = 'Not applicable to this Agreement.';
+    if (!v.gc) blank['11'] = 'Not applicable to this Agreement.';
+
+    var fix = h('button', { class: 'btn ghost', type: 'button' }, 'Cambiar datos');
+    fix.onclick = function () { if (stack.length > 1) history.back(); };
+    var gen = h('button', { class: 'btn', type: 'button' }, 'Generar el PDF');
+    gen.onclick = function () {
+      run(gen, function () {
+        var d = {
+          co: ctx.co, title: 'SERVICES AGREEMENT',
+          sub: 'Construction & Build-Out Services — State of New York',
+          rows: [['Date of agreement', longDate(v.fecha)], ['Project', pr.name]],
+          amount: v.monto,
+          estimate_date: v.est_fecha ? longDate(v.est_fecha) : '',
+          estimate_title: v.est_titulo,
+          checked: [v.tipo, v.serv, v.venc, v.ocup],
+          blank: blank,
+          labels: {
+            'CLIENT — Full Legal Name': pr.client_legal_name || pr.client,
+            'Date of Agreement': longDate(v.fecha),
+            'Client Address': pr.client_address,
+            'Client Email': pr.client_email,
+            'Client Phone': pr.client_phone,
+            'Project Address (if different from above)': pr.address,
+            'Project Start Date (estimated)': v.inicio ? longDate(v.inicio) : '',
+            'Substantial Completion Date (estimated)': v.fin ? longDate(v.fin) : ''
+          }
+        };
+        return ensure().then(logo).then(function (img) {
+          return D.number('contract').then(function (num) {
+            d.number = num;
+            buildFromTemplate(d, img, tpl).save('Proven-Contract-' + num + '.pdf');
+            return D.save({ kind: 'contract', number: num, project_id: pr.id,
+              status: 'issued', issued_on: P.dkey(new Date()), total: v.monto, body: d });
+          });
+        }).then(function () { toast('Contrato generado.'); view(main); });
+      });
+    };
+
+    fill(main,
+      h('div', { class: 'sech' }, h('h2', null, 'Revisa antes de generar'), backBtn()),
+      robot('Mira sobre todo las casillas y las secciones que van a salir anuladas.'),
+      h('div', { class: 'card' },
+        h('div', { class: 'list' }, [
+          ['Proyecto', pr.name],
+          ['Cliente', pr.client_legal_name || pr.client],
+          ['Valor del contrato', money(v.monto)],
+          ['Tipo', v.tipo + ' · ' + v.serv],
+          ['Vencimiento de facturas', v.venc],
+          ['El espacio está', v.ocup],
+          ['Estimado que incorpora', (v.est_titulo || '—') + (v.est_fecha ? ' · ' + longDate(v.est_fecha) : '')],
+          ['Secciones anuladas', Object.keys(blank).join(', ') || 'ninguna']
+        ].map(function (r) {
+          return h('div', { class: 'lrow slim' }, h('span', null, r[0]), h('b', null, r[1]));
+        }))),
+      h('div', { class: 'acts' }, fix, gen));
+  }
+
+  /* ================= CHANGE ORDER ================= */
+  var CO_RAZON = ['Client Request', 'Hidden Condition', 'Building Requirement', 'Other'];
+
+  function coFlow(main, ctx) {
+    show(function () { pickProject(main, ctx, 'Change order', function (pr) {
+      fill(main, h('div', { class: 'spin' }));
+      Promise.all([D.summary(pr.id), plantilla('change_order')]).then(function (r) {
+        var sum = (r[0] || [])[0] || {}, tpl = r[1];
+        show(function () { coForm(main, ctx, pr, sum, tpl); });
+      }).catch(function (e) { fill(main, empty('Nelly', P.errText(e))); });
+    }); });
+  }
+
+  function coForm(main, ctx, pr, sum, tpl) {
+    var razon = h('select', null, CO_RAZON.map(function (x) { return h('option', { value: x }, x); }));
+    var desc = h('textarea', { rows: 3, placeholder: 'Qué cambia y por qué' });
+    var dias = h('input', { type: 'number', min: '0', value: '0' });
+    var rowsBox = h('div', { class: 'list' });
+    function itemRow(it) {
+      var d1 = h('input', { value: (it && it.desc) || '', placeholder: 'Qué se agrega' });
+      var q1 = h('input', { type: 'number', step: '0.01', value: 1 });
+      var u1 = h('input', { type: 'number', step: '0.01', placeholder: '0.00' });
+      var del = h('button', { class: 'ib', type: 'button', 'aria-label': 'Quitar' }, '×');
+      var el = h('div', { class: 'card lrow slim nelly-item' }, d1, q1, u1, del);
+      el._read = function () {
+        var qn = Number(q1.value) || 0, un = Number(u1.value) || 0;
+        return { desc: d1.value.trim(), qty: qn, unit: un, total: Math.round(qn * un * 100) / 100 };
+      };
+      del.onclick = function () { el.remove(); };
+      return el;
+    }
+    rowsBox.append(itemRow());
+    var add = h('button', { class: 'btn ghost sm', type: 'button' }, ico('plus', 15), 'Otro renglón');
+    add.onclick = function () { rowsBox.append(itemRow()); };
+
+    var go = h('button', { class: 'btn', type: 'button' }, 'Revisar antes de generar');
+    go.onclick = function () {
+      var items = Array.prototype.map.call(rowsBox.children, function (el) { return el._read(); })
+        .filter(function (i) { return i.desc || i.total; });
+      if (!items.length) { toast('Falta al menos un renglón.', true); return; }
+      if (!desc.value.trim()) { toast('Falta decir qué cambia.', true); desc.focus(); return; }
+      var tot = items.reduce(function (a, i) { return a + i.total; }, 0);
+      show(function () {
+        coConfirm(main, ctx, pr, sum, tpl, {
+          razon: razon.value, desc: desc.value.trim(), dias: Number(dias.value) || 0,
+          items: items, total: Math.round(tot * 100) / 100
+        });
+      });
+    };
+
+    fill(main,
+      h('div', { class: 'sech' }, h('h2', null, 'Change order · ' + pr.name), backBtn()),
+      robot('Los change orders no llevan descuento. Eso lo dice tu propio contrato.'),
+      summaryCard(sum),
+      h('div', { class: 'card' },
+        h('div', { class: 'two' }, field('Razón del cambio', razon), field('Días adicionales de obra', dias)),
+        field('Qué cambia', desc),
+        h('div', { class: 'sech' }, h('h3', null, 'Costo'), add),
+        rowsBox,
+        h('div', { class: 'acts' }, go)));
+  }
+
+  function coConfirm(main, ctx, pr, sum, tpl, v) {
+    var orig = Number(sum.contract_original) || 0;
+    var previos = Number(sum.change_orders) || 0;
+    var nuevo = Math.round((orig + previos + v.total) * 100) / 100;
+    var mitad = Math.round((v.total / 2) * 100) / 100;
+
+    var fix = h('button', { class: 'btn ghost', type: 'button' }, 'Cambiar datos');
+    fix.onclick = function () { if (stack.length > 1) history.back(); };
+    var gen = h('button', { class: 'btn', type: 'button' }, 'Generar el PDF');
+    gen.onclick = function () {
+      run(gen, function () {
+        var d = {
+          co: ctx.co, title: 'CHANGE ORDER',
+          rows: [['Date', longDate(P.dkey(new Date()))], ['Project', pr.name]],
+          checked: [v.razon], items: v.items, amount: v.total,
+          labels: {
+            'CHANGE ORDER TOTAL': v.total,
+            'Original Contract Amount': orig,
+            'Prior approved Change Orders (running total)': previos,
+            'This Change Order': v.total,
+            'NEW CONTRACT TOTAL  (after this CO)': nuevo,
+            'NEW CONTRACT TOTAL (after this CO)': nuevo,
+            '50% Due at Signing': mitad,
+            '50% Added to Final Balance': mitad,
+            'Additional Working Days Required': String(v.dias),
+            'CLIENT — Full Legal Name': pr.client_legal_name || pr.client,
+            'Project Address': pr.address,
+            'Original Contract Date': longDate(pr.contract_date)
+          },
+          reason: v.desc
+        };
+        return ensure().then(logo).then(function (img) {
+          return D.number('change_order').then(function (num) {
+            d.number = num;
+            buildFromTemplate(d, img, tpl).save('Proven-ChangeOrder-' + num + '.pdf');
+            return D.save({ kind: 'change_order', number: num, project_id: pr.id,
+              status: 'issued', issued_on: P.dkey(new Date()), total: v.total, body: d });
+          });
+        }).then(function () { toast('Change order generado.'); view(main); });
+      });
+    };
+
+    fill(main,
+      h('div', { class: 'sech' }, h('h2', null, 'Revisa antes de generar'), backBtn()),
+      robot('Esto cambia el valor del contrato. Revisa el total nuevo.'),
+      h('div', { class: 'card' },
+        h('div', { class: 'list' }, v.items.map(function (i) {
+          return h('div', { class: 'lrow slim' },
+            h('span', null, h('b', null, i.desc), h('small', null, i.qty + ' × ' + money(i.unit))),
+            h('b', null, money(i.total)));
+        })),
+        h('div', { class: 'lrow slim tot' }, h('span', null, 'ESTE CHANGE ORDER'), h('b', null, money(v.total)))),
+      h('div', { class: 'card' },
+        h('div', { class: 'list' }, [
+          ['Contrato original', money(orig)],
+          ['Change orders previos', money(previos)],
+          ['Este change order', money(v.total)],
+          ['Días adicionales', String(v.dias)]
+        ].map(function (r) {
+          return h('div', { class: 'lrow slim' }, h('span', null, r[0]), h('b', null, r[1]));
+        })),
+        h('div', { class: 'lrow slim tot' }, h('span', null, 'CONTRATO NUEVO'), h('b', null, money(nuevo))),
+        h('p', { class: 'mut sm' }, '50% a la firma: ' + money(mitad) + ' · 50% al saldo final: ' + money(mitad))),
+      h('div', { class: 'acts' }, fix, gen));
+  }
+
   /* ---------- lo que el resto del portal puede llamar ---------- */
   window.NELLY = {
     ensure: ensure,
     logo: logo,
     buildInvoice: buildInvoice,
     buildReceipt: buildReceipt,
+    buildFromTemplate: buildFromTemplate,
     FOR_OPTS: FOR_OPTS,
     METHODS: METHODS,
     view: view
@@ -483,8 +940,8 @@
   var MENU = [
     { k: 'estimate', t: 'Hacer un estimado', d: 'Lee las fotos y arma el PDF.', soon: true },
     { k: 'estimate_edit', t: 'Modificar un estimado', d: 'Busca uno y lo abre para cambiarlo.', soon: true },
-    { k: 'contract', t: 'Hacer el contrato', d: 'Saca los datos del estimado.', soon: true },
-    { k: 'change_order', t: 'Hacer un change order', d: 'Cuelga del contrato.', soon: true },
+    { k: 'contract', t: 'Hacer el contrato', d: 'Saca los datos del proyecto.' },
+    { k: 'change_order', t: 'Hacer un change order', d: 'Cuelga del contrato.' },
     { k: 'invoice', t: 'Hacer un invoice', d: 'El portal calcula, tú confirmas.' },
     { k: 'receipt', t: 'Hacer un receipt', d: 'Cuando el cliente ya pagó.' }
   ];
@@ -525,7 +982,9 @@
       if (!m.soon) {
         el.onclick = function () {
           if (m.k === 'invoice') invoiceFlow(main, ctx);
-          else receiptFlow(main, ctx);
+          else if (m.k === 'receipt') receiptFlow(main, ctx);
+          else if (m.k === 'contract') contractFlow(main, ctx);
+          else if (m.k === 'change_order') coFlow(main, ctx);
         };
       }
       return el;
