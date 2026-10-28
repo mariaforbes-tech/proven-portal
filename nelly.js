@@ -1099,52 +1099,172 @@
     }
   }
 
-  /* ---------- subir un estimado hecho por fuera ----------
-     Mientras el estimador no esté al 100%, los estimados se siguen haciendo
-     por fuera y el portal no se entera de que existen. Esto es lo mínimo
-     para que se entere: el proyecto, el PDF y el número. Nada más. */
-  function estimateUploadFlow(main, ctx) {
-    show(function () {
-      pickProject(main, ctx, 'Subir un estimado', function (pr) {
-        show(function () { estimateUploadForm(main, pr); });
-      });
+  /* ---------- subir un estimado y que Nelly haga el resto ----------
+     Ella no quiere crear el proyecto a mano: para eso tiene a Nelly. Sube
+     el PDF del estimado, Nelly lo lee, y de ahí salen el proyecto, el
+     estimado guardado y el invoice ya empezado.
+
+     Lo que Nelly lee se le muestra ANTES de crear nada. No es desconfiar
+     del modelo: de esa pantalla salen el nombre del cliente y el monto
+     que van impresos en un documento que se manda a cobrar, y eso se
+     mira una vez. Es una sola pantalla, con todo ya lleno. */
+  function leerPdf(file) {
+    return new Promise(function (ok, no) {
+      if (file.type !== 'application/pdf' && !/\.pdf$/i.test(file.name || '')) {
+        return no(new Error('Tiene que ser un PDF.'));
+      }
+      if (file.size > 6 * 1024 * 1024) return no(new Error('Ese PDF pesa más de 6 MB.'));
+      var r = new FileReader();
+      r.onload = function () {
+        var s = String(r.result || ''), i = s.indexOf(',');
+        if (i < 0) return no(new Error('No pude abrir ese PDF.'));
+        ok(s.slice(i + 1));
+      };
+      r.onerror = function () { no(new Error('No pude abrir ese PDF.')); };
+      r.readAsDataURL(file);
     });
   }
 
-  function estimateUploadForm(main, pr) {
-    var file = h('input', { type: 'file', accept: 'application/pdf,.pdf' });
-    var num = h('input', { placeholder: 'Ej: 052' });
+  function estimateAutoFlow(main, ctx) {
+    show(function () {
+      var file = h('input', { type: 'file', accept: 'application/pdf,.pdf' });
+      var go = h('button', { class: 'btn', type: 'button' }, 'Leer el estimado');
 
-    /* El número casi siempre ya viene en el nombre del archivo. Se rellena
-       solo; si no acierta, ella lo corrige encima. */
-    file.onchange = function () {
-      var f = file.files && file.files[0];
-      if (!f || num.value.trim()) return;
-      var m = String(f.name).replace(/\.pdf$/i, '').match(/(\d{2,})(?!.*\d)/);
-      if (m) num.value = m[1];
-    };
+      function falló(e) {
+        fill(main,
+          h('div', { class: 'sech' }, h('h2', null, 'Subir un estimado'), backBtn()),
+          robot('No pude leerlo. ' + P.errText(e), 'ups'));
+      }
 
-    var go = h('button', { class: 'btn', type: 'button' }, 'Subir');
-    go.onclick = function () {
-      var f = file.files && file.files[0];
-      if (!f) { toast('Escoge el PDF.', true); return; }
-      var n = num.value.trim();
-      if (!n) { toast('Falta el número del estimado.', true); return; }
-      run(go, function () {
-        return subirEstimado(pr, { num: n, file: f }).then(function () {
-          toast('Estimado ' + n + ' guardado.');
-          view(main);
+      go.onclick = function () {
+        var f = file.files && file.files[0];
+        if (!f) { toast('Escoge el PDF.', true); return; }
+        run(go, function () {
+          return leerPdf(f).then(function (b64) {
+            fill(main,
+              h('div', { class: 'sech' }, h('h2', null, 'Subir un estimado')),
+              robot('Estoy leyendo el PDF. Esto se demora un poco.', 'pensando'),
+              h('div', { class: 'spin' }));
+            return sb.functions.invoke('estimate', { body: { modo: 'leer', pdf: b64 } });
+          }).then(function (r) {
+            if (r.error) throw r.error;
+            var res = r.data || {};
+            if (res.error) throw new Error(res.error);
+            show(function () { estimateAutoReview(main, ctx, res.leido || {}, f); });
+          }).catch(falló);
+        });
+      };
+
+      fill(main,
+        h('div', { class: 'sech' }, h('h2', null, 'Subir un estimado'), backBtn()),
+        robot('Súbeme el PDF y yo saco de ahí el proyecto, el cliente y el total.', 'estimado'),
+        h('div', { class: 'card' },
+          field('El PDF del estimado', file),
+          h('div', { class: 'acts' }, go)));
+    });
+  }
+
+  function estimateAutoReview(main, ctx, d, file) {
+    var titulo = String(d.titulo || '').trim();
+    var cliente = String(d.cliente || '').trim();
+    var direccion = String(d.direccion || '').trim();
+    var numero = String(d.numero == null ? '' : d.numero).replace(/[^A-Za-z0-9_.-]/g, '');
+    var total = Number(d.total);
+    if (!isFinite(total) || total < 0) total = 0;
+
+    /* Si el PDF no traía número, el del nombre del archivo sirve. */
+    if (!numero) {
+      var mm = String(file.name || '').replace(/\.pdf$/i, '').match(/(\d{2,})(?!.*\d)/);
+      if (mm) numero = mm[1];
+    }
+
+    var fNom = h('input', { required: true, value: titulo || cliente || '' });
+    var fCli = h('input', { value: cliente });
+    var fDir = h('input', { value: direccion, autocomplete: 'off' });
+    var fNum = h('input', { value: numero, placeholder: 'Ej: 052' });
+    var fTot = h('input', { type: 'number', step: '0.01', min: '0', inputmode: 'decimal',
+      value: total ? String(total) : '' });
+
+    /* Si ese proyecto ya está en el portal no se crea otro igual: dos
+       proyectos del mismo cliente en la misma dirección ensucian el
+       resumen de cuenta, los pagos y todo lo que venga después. */
+    function trozo(s, n) { return s.toLowerCase().slice(0, n); }
+    var parecidos = ctx.projects.filter(function (p2) {
+      var s = ((p2.client || '') + ' ' + (p2.address || '') + ' ' + (p2.name || '')).toLowerCase();
+      if (direccion.length > 6 && s.indexOf(trozo(direccion, 14)) >= 0) return true;
+      if (cliente.length > 4 && s.indexOf(trozo(cliente, 10)) >= 0) return true;
+      return false;
+    }).slice(0, 6);
+
+    var cual = h('select', null, [h('option', { value: '' }, 'Crear un proyecto nuevo')].concat(
+      parecidos.map(function (p2) {
+        return h('option', { value: p2.id },
+          p2.name + (p2.address ? ' \u00b7 ' + p2.address : ''));
+      })));
+
+    var save = h('button', { class: 'btn', type: 'button' }, 'Crear y seguir al invoice');
+    save.onclick = function () {
+      var num = fNum.value.trim();
+      if (!num) { toast('No pude sacar el número del PDF. Escríbelo.', true); fNum.focus(); return; }
+      var tot = Number(fTot.value);
+      if (!isFinite(tot) || tot <= 0) { toast('Falta el total del estimado.', true); fTot.focus(); return; }
+      var nom = fNom.value.trim();
+      if (!nom) { toast('Falta el nombre del proyecto.', true); fNom.focus(); return; }
+
+      run(save, function () {
+        var viejo = cual.value
+          ? ctx.projects.filter(function (p2) { return p2.id === cual.value; })[0] : null;
+        var hacer = viejo ? Promise.resolve(viejo) : Promise.resolve(P.API.saveProject({
+          name: nom, client: fCli.value.trim(), address: fDir.value.trim(),
+          status: 'active', starts_on: '', ends_on: '', contract: null, notes: ''
+        }, [])).then(function (id) {
+          var pr = { id: id, name: nom, client: fCli.value.trim(),
+            address: fDir.value.trim(), status: 'active', contract: null };
+          ctx.projects.unshift(pr);
+          return pr;
+        });
+
+        return hacer.then(function (pr) {
+          return subirEstimado(pr, { num: num, file: file, total: tot, titulo: nom,
+            cliente: fCli.value.trim(), direccion: fDir.value.trim(),
+            renglones: Array.isArray(d.renglones) ? d.renglones : [] })
+            .then(function (row) {
+              return Promise.all([
+                D.payments(pr.id).catch(function () { return []; }),
+                D.summary(pr.id).catch(function () { return []; })
+              ]).then(function (r) {
+                var hoy = P.dkey(new Date());
+                var ests = [{ id: row.id, number: num, issued_on: hoy, total: tot }];
+                /* El invoice arranca con una sola línea por el total del
+                   estimado. Los estimados de ella son suma global: abrirlos
+                   renglón por renglón le mostraría al cliente precios por
+                   partida que el estimado nunca mostró. */
+                var keep = {
+                  for: 'final', date: hoy, due: addDays(hoy, 7), tax: 0, notes: '',
+                  payment_id: null, reason: '', estimate_number: num,
+                  items: [{ desc: 'Per Estimate #' + num + (nom ? ' \u2014 ' + nom : ''),
+                    qty: 1, unit: tot, total: tot }]
+                };
+                toast('Estimado ' + num + ' guardado.');
+                show(function () {
+                  invoiceForm(main, ctx, pr, r[0] || [], (r[1] || [])[0] || {}, ests, keep);
+                });
+              });
+            });
         });
       });
     };
 
     fill(main,
-      h('div', { class: 'sech' }, h('h2', null, 'Subir un estimado'), backBtn()),
-      robot('Súbeme el PDF y lo dejo colgado de ' + pr.name + '.', 'estimado'),
+      h('div', { class: 'sech' }, h('h2', null, 'Esto fue lo que leí'), backBtn()),
+      robot('Revísalo: de aquí salen el proyecto y el invoice.', 'estimado'),
       h('div', { class: 'card' },
-        field('El PDF del estimado', file),
-        field('Número', num),
-        h('div', { class: 'acts' }, go)));
+        parecidos.length ? field('¿Ya existe este proyecto?', cual) : null,
+        field('Nombre del proyecto', fNom),
+        h('div', { class: 'two' }, field('Cliente', fCli), field('Número del estimado', fNum)),
+        field('Dirección', fDir),
+        field('Total del estimado ($)', fTot),
+        h('div', { class: 'acts' }, save)));
   }
 
   /* ---------- 2. lo que Nelly necesita saber ---------- */
@@ -1731,6 +1851,21 @@
      Lo que no esté en la tabla sale tal cual: el nombre de un proyecto o
      de un cliente nunca se toca. */
   var EN = {
+    "Súbeme el PDF y yo saco de ahí el proyecto, el cliente y el total.": "Send me the PDF and I'll pull the project, the client and the total out of it.",
+    "No pude sacar el número del PDF. Escríbelo.": "I couldn't get the number from the PDF. Type it in.",
+    "Revísalo: de aquí salen el proyecto y el invoice.": "Check it: the project and the invoice come out of this.",
+    "Estoy leyendo el PDF. Esto se demora un poco.": "I'm reading the PDF. This takes a moment.",
+    "Falta el total del estimado.": "The estimate total is missing.",
+    "¿Ya existe este proyecto?": "Does this project already exist?",
+    "Crear y seguir al invoice": "Create and go to the invoice",
+    "Crear un proyecto nuevo": "Create a new project",
+    "Total del estimado ($)": "Estimate total ($)",
+    "Ese PDF pesa más de 6 MB.": "That PDF is over 6 MB.",
+    "No pude abrir ese PDF.": "I couldn't open that PDF.",
+    "Esto fue lo que leí": "This is what I read",
+    "Leer el estimado": "Read the estimate",
+    "Tiene que ser un PDF.": "It has to be a PDF.",
+    "No pude leerlo. ": "I couldn't read it. ",
     "Lo demás se completa después desde Projects.": "The rest is filled in later from Projects.",
     "Escoge el proyecto y te pido el PDF.": "Pick the project and I'll ask you for the PDF.",
     "Falta el nombre del proyecto.": "The project name is missing.",
@@ -1799,7 +1934,7 @@
     "Súbeme el PDF y lo dejo colgado de ": "Send me the PDF and I'll file it under ",
     "Clientes que ya trabajaron contigo": "Clients who have worked with you",
     "Todavia no hay estimados emitidos.": "No estimates issued yet.",
-    "El que hiciste por fuera, en PDF.": "The one you made outside, as a PDF.",
+    "Lo leo y armo el proyecto y el invoice.": "I read it and build the project and the invoice.",
     "No hay estimados de este proyecto": "No estimates for this project",
     "Ya hay un estimado con el número ": "There is already an estimate numbered ",
     "Abre uno viejo y sale uno nuevo.": "Opens an old one, out comes a new one.",
@@ -2192,7 +2327,16 @@
       return D.save({
         kind: 'estimate', number: sube.num, project_id: pr.id,
         status: 'issued', issued_on: P.dkey(new Date()),
-        body: { externo: true, archivo: sube.file.name }, pdf_path: path
+        total: sube.total == null ? null : sube.total,
+        /* Se guarda lo que Nelly leyó del PDF, no un estimado armado por
+           ella: por eso 'externo'. Modificar un estimado sabe distinguirlo
+           y no intenta abrirlo como si tuviera renglones propios. */
+        body: {
+          externo: true, archivo: sube.file.name,
+          titulo: sube.titulo || '', bill: { name: sube.cliente || '', address: sube.direccion || '' },
+          leido: sube.renglones || []
+        },
+        pdf_path: path
       });
     }).catch(function (e) {
       /* El choque de número es el error que de verdad va a pasar, y el
@@ -2248,7 +2392,7 @@
   var MENU = [
     { k: 'estimate', t: 'Hacer un estimado', d: 'Lee las fotos y arma el PDF.' },
     { k: 'estimate_edit', t: 'Modificar un estimado', d: 'Abre uno viejo y sale uno nuevo.' },
-    { k: 'estimate_up', t: 'Subir un estimado', d: 'El que hiciste por fuera, en PDF.' },
+    { k: 'estimate_up', t: 'Subir un estimado', d: 'Lo leo y armo el proyecto y el invoice.' },
     { k: 'contract', t: 'Hacer el contrato', d: 'Saca los datos del proyecto.' },
     { k: 'change_order', t: 'Hacer un change order', d: 'Cuelga del contrato.' },
     { k: 'invoice', t: 'Hacer un invoice', d: 'El portal calcula, tú confirmas.' },
@@ -2298,7 +2442,7 @@
         el.onclick = function () {
           if (m.k === 'estimate') estimateFlow(main, ctx);
           else if (m.k === 'estimate_edit') estimateEditFlow(main, ctx);
-          else if (m.k === 'estimate_up') estimateUploadFlow(main, ctx);
+          else if (m.k === 'estimate_up') estimateAutoFlow(main, ctx);
           else if (m.k === 'invoice') invoiceFlow(main, ctx);
           else if (m.k === 'receipt') receiptFlow(main, ctx);
           else if (m.k === 'contract') contractFlow(main, ctx);
@@ -2366,21 +2510,12 @@
        la pestaña de Projects a crearlo y volver la saca del camino a
        mitad de una tarea. Y si el estimado se hizo por fuera, este es el
        momento en que uno se acuerda de que hay que subirlo. */
-    var modo = { subir: false };
-    var aviso = h('p', { class: 'mut sm', hidden: true }, 'Escoge el proyecto y te pido el PDF.');
     var sube = h('button', { class: 'btn ghost sm', type: 'button' }, 'Subir un estimado');
-    sube.onclick = function () {
-      modo.subir = !modo.subir;
-      aviso.hidden = !modo.subir;
-      fill(sube, modo.subir ? 'Cancelar subida' : 'Subir un estimado');
-    };
+    sube.onclick = function () { estimateAutoFlow(main, ctx); };
     var nuevo = h('button', { class: 'btn ghost sm', type: 'button' }, ico('plus', 15), 'Nuevo proyecto');
     nuevo.onclick = function () { nuevoProyecto(ctx, elegido); };
 
-    function elegido(p2) {
-      if (modo.subir) { show(function () { estimateUploadForm(main, p2); }); return; }
-      next(p2);
-    }
+    function elegido(p2) { next(p2); }
 
     function draw() {
       var s2 = find.value.trim().toLowerCase();
@@ -2404,7 +2539,6 @@
       robot('¿Para qué proyecto?', 'saludo'),
       h('div', { class: 'mb' }, find),
       h('div', { class: 'acts' }, nuevo, sube),
-      aviso,
       box);
   }
 
