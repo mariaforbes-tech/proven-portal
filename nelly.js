@@ -451,6 +451,34 @@
     return P.dkey(d);
   }
 
+
+  /* ---------- pasos: el botón de atrás del navegador se queda dentro ---------- */
+  var stack = [], wired = false;
+  function wire() {
+    if (wired) return;
+    wired = true;
+    window.addEventListener('popstate', function () {
+      if (!P || !P.S || P.S.tab !== 'nelly' || stack.length < 2) return;
+      stack.pop();
+      stack[stack.length - 1]();
+    });
+  }
+  /* Entra a una pantalla nueva y la deja anotada, para poder devolverse. */
+  function show(render) {
+    wire();
+    stack.push(render);
+    if (stack.length > 1) { try { history.pushState({ nelly: stack.length }, ''); } catch (e) { /* ok */ } }
+    render();
+  }
+  function backBtn() {
+    var b = h('button', { class: 'lnk', type: 'button' }, '← Volver');
+    b.onclick = function () {
+      if (stack.length > 1) history.back();
+    };
+    b.hidden = stack.length < 2;
+    return b;
+  }
+
   /* ---------- el saludo y las opciones ---------- */
   var MENU = [
     { k: 'estimate', t: 'Hacer un estimado', d: 'Lee las fotos y arma el PDF.', soon: true },
@@ -471,7 +499,8 @@
     Promise.all([D.company(), D.projects(), D.recent().catch(function () { return []; })])
       .then(function (r) {
         var ctx = { co: r[0] || {}, projects: r[1] || [], recent: r[2] || [] };
-        home(main, ctx);
+        stack = [];
+        show(function () { home(main, ctx); });
       })
       .catch(function (e) {
         fill(main, empty('Nelly', P.errText(e) + ' — ¿ya corriste nelly-1-documentos.sql?'));
@@ -547,10 +576,8 @@
     }
     find.oninput = draw;
     draw();
-    var back = h('button', { class: 'lnk', type: 'button' }, '← Volver');
-    back.onclick = function () { home(main, ctx); };
     fill(main,
-      h('div', { class: 'sech' }, h('h2', null, title), back),
+      h('div', { class: 'sech' }, h('h2', null, title), backBtn()),
       robot('¿Para qué proyecto?'),
       h('div', { class: 'mb' }, find),
       box);
@@ -611,12 +638,13 @@
 
   /* ================= INVOICE ================= */
   function invoiceFlow(main, ctx) {
-    pickProject(main, ctx, 'Invoice', function (pr) {
+    show(function () { pickProject(main, ctx, 'Invoice', function (pr) {
       fill(main, h('div', { class: 'spin' }));
       Promise.all([D.payments(pr.id), D.summary(pr.id)]).then(function (r) {
-        invoiceForm(main, ctx, pr, r[0] || [], (r[1] || [])[0] || {});
+        var pays = r[0] || [], sum = (r[1] || [])[0] || {};
+        show(function () { invoiceForm(main, ctx, pr, pays, sum); });
       }).catch(function (e) { fill(main, empty('Nelly', P.errText(e))); });
-    });
+    }); });
   }
 
   function invoiceForm(main, ctx, pr, pays, sum, keep) {
@@ -678,18 +706,16 @@
       if (!items.length) { toast('Falta al menos un renglón.', true); return; }
       var sub = items.reduce(function (a, i) { return a + i.total; }, 0);
       var tax = Number(ftax.value) || 0;
-      invoiceConfirm(main, ctx, pr, pays, sum, {
+      var v = {
         for: forSel.value, date: fdate.value, due: fdue.value,
         items: items, subtotal: Math.round(sub * 100) / 100, tax: tax,
         total: Math.round((sub + tax) * 100) / 100,
         notes: fnotes.value.trim(), payment_id: sel.value || null, reason: st.reason
-      });
+      };
+      show(function () { invoiceConfirm(main, ctx, pr, pays, sum, v); });
     };
-    var back = h('button', { class: 'lnk', type: 'button' }, '← Volver');
-    back.onclick = function () { home(main, ctx); };
-
     fill(main,
-      h('div', { class: 'sech' }, h('h2', null, 'Invoice · ' + pr.name), back),
+      h('div', { class: 'sech' }, h('h2', null, 'Invoice · ' + pr.name), backBtn()),
       faltan.length ? h('p', { class: 'mut sm warnline' },
         'Al proyecto le falta: ' + faltan.join(', ') + '. El documento sale igual, pero esos campos van vacíos.') : null,
       robot('Escoge qué se cobra. Lo demás lo traigo yo.'),
@@ -710,7 +736,7 @@
     var reason = h('textarea', { rows: 2, placeholder: 'Por qué el monto es distinto' }, v.reason || '');
 
     var fix = h('button', { class: 'btn ghost', type: 'button' }, 'Cambiar datos');
-    fix.onclick = function () { invoiceForm(main, ctx, pr, pays, sum, v); };
+    fix.onclick = function () { if (stack.length > 1) history.back(); };
 
     var gen = h('button', { class: 'btn', type: 'button' }, 'Generar el PDF');
     gen.onclick = function () {
@@ -739,7 +765,7 @@
     };
 
     fill(main,
-      h('div', { class: 'sech' }, h('h2', null, 'Revisa antes de generar')),
+      h('div', { class: 'sech' }, h('h2', null, 'Revisa antes de generar'), backBtn()),
       robot('Una vez lo genere, el documento no se edita. Si algo está mal, cámbialo ahora.'),
       h('div', { class: 'card' },
         h('h3', null, pr.name),
@@ -765,7 +791,7 @@
 
   /* ================= RECEIPT ================= */
   function receiptFlow(main, ctx) {
-    pickProject(main, ctx, 'Receipt', function (pr) {
+    show(function () { pickProject(main, ctx, 'Receipt', function (pr) { show(function () {
       var si = h('button', { class: 'btn big', type: 'button' }, 'Sí, ya pagó');
       var no = h('button', { class: 'btn ghost big', type: 'button' }, 'Todavía no');
       no.onclick = function () {
@@ -775,16 +801,17 @@
       si.onclick = function () {
         fill(main, h('div', { class: 'spin' }));
         Promise.all([D.payments(pr.id), D.summary(pr.id)]).then(function (r) {
-          receiptForm(main, ctx, pr, r[0] || [], (r[1] || [])[0] || {});
+          var pays = r[0] || [], sum = (r[1] || [])[0] || {};
+          show(function () { receiptForm(main, ctx, pr, pays, sum); });
         }).catch(function (e) { fill(main, empty('Nelly', P.errText(e))); });
       };
       fill(main,
-        h('div', { class: 'sech' }, h('h2', null, 'Receipt · ' + pr.name)),
+        h('div', { class: 'sech' }, h('h2', null, 'Receipt · ' + pr.name), backBtn()),
         h('div', { class: 'card nelly-ask' },
           h('h3', null, '¿El cliente ya hizo el pago?'),
           h('p', { class: 'mut sm' }, 'Un recibo se emite después de que el dinero entró, nunca antes.'),
           h('div', { class: 'acts' }, si, no)));
-    });
+    }); }); });
   }
 
   function receiptForm(main, ctx, pr, pays, sum) {
@@ -822,21 +849,19 @@
         toast('Falta el número de confirmación. Es lo que prueba el pago.', true);
         ref.focus(); return;
       }
-      receiptConfirm(main, ctx, pr, pays, sum, {
+      var v = {
         payment_id: sel.value || null, amount: amt, received_on: when.value,
         method: method.value, check_number: check.value.trim(), reference: ref.value.trim(),
         applied_to: applied.value, invoice_number: invno.value.trim(),
         issued_by: issued.value.trim(), file: shot.files && shot.files[0]
-      });
+      };
+      show(function () { receiptConfirm(main, ctx, pr, pays, sum, v); });
     };
-    var back = h('button', { class: 'lnk', type: 'button' }, '← Volver');
-    back.onclick = function () { home(main, ctx); };
-
     var chk = field('Número del cheque', check);
     chk.hidden = true;
 
     fill(main,
-      h('div', { class: 'sech' }, h('h2', null, 'Receipt · ' + pr.name), back),
+      h('div', { class: 'sech' }, h('h2', null, 'Receipt · ' + pr.name), backBtn()),
       robot('Dime cómo entró la plata y con qué número de confirmación.'),
       summaryCard(sum),
       h('div', { class: 'card' },
@@ -854,7 +879,7 @@
     var mName = METHODS.filter(function (m) { return m.k === v.method; })[0];
     var aName = FOR_OPTS.filter(function (o) { return o.k === v.applied_to; })[0];
     var fix = h('button', { class: 'btn ghost', type: 'button' }, 'Cambiar datos');
-    fix.onclick = function () { receiptForm(main, ctx, pr, pays, sum); };
+    fix.onclick = function () { if (stack.length > 1) history.back(); };
 
     var gen = h('button', { class: 'btn', type: 'button' }, 'Generar el PDF');
     gen.onclick = function () {
@@ -891,7 +916,7 @@
     };
 
     fill(main,
-      h('div', { class: 'sech' }, h('h2', null, 'Revisa antes de generar')),
+      h('div', { class: 'sech' }, h('h2', null, 'Revisa antes de generar'), backBtn()),
       robot('Una vez emitido, el recibo no se edita. Si algo está mal, cámbialo ahora.'),
       h('div', { class: 'card' },
         h('div', { class: 'lrow slim tot' }, h('span', null, 'RECIBIDO'), h('b', null, money(v.amount))),
