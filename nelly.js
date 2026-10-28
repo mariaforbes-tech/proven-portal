@@ -696,11 +696,20 @@
         return ensure().then(logo).then(function (img) {
           return D.number('contract').then(function (num) {
             d.number = num;
-            buildFromTemplate(d, img, tpl).save('Proven-Contract-' + num + '.pdf');
-            return D.save({ kind: 'contract', number: num, project_id: pr.id,
-              status: 'issued', issued_on: P.dkey(new Date()), total: v.monto, body: d });
+            var doc = buildFromTemplate(d, img, tpl);
+            return keep(pr, 'contract', num, doc).then(function (path) {
+              doc.save('Proven-Contract-' + num + '.pdf');
+              return D.save({ kind: 'contract', number: num, project_id: pr.id,
+                status: 'issued', issued_on: P.dkey(new Date()), total: v.monto,
+                body: d, pdf_path: path });
+            });
           });
-        }).then(function () { toast('Contrato generado.'); view(main); });
+        }).then(function (row) {
+          toast(row && row.pdf_path
+            ? 'Contrato generado. El cliente ya lo puede firmar en su portal.'
+            : 'Contrato generado, pero no se pudo guardar en el portal: el cliente no lo va a ver.');
+          view(main);
+        });
       });
     };
 
@@ -819,11 +828,20 @@
         return ensure().then(logo).then(function (img) {
           return D.number('change_order').then(function (num) {
             d.number = num;
-            buildFromTemplate(d, img, tpl).save('Proven-ChangeOrder-' + num + '.pdf');
-            return D.save({ kind: 'change_order', number: num, project_id: pr.id,
-              status: 'issued', issued_on: P.dkey(new Date()), total: v.total, body: d });
+            var doc = buildFromTemplate(d, img, tpl);
+            return keep(pr, 'change_order', num, doc).then(function (path) {
+              doc.save('Proven-ChangeOrder-' + num + '.pdf');
+              return D.save({ kind: 'change_order', number: num, project_id: pr.id,
+                status: 'issued', issued_on: P.dkey(new Date()), total: v.total,
+                body: d, pdf_path: path });
+            });
           });
-        }).then(function () { toast('Change order generado.'); view(main); });
+        }).then(function (row) {
+          toast(row && row.pdf_path
+            ? 'Change order generado. El cliente ya lo puede firmar en su portal.'
+            : 'Change order generado, pero no se pudo guardar en el portal: el cliente no lo va a ver.');
+          view(main);
+        });
       });
     };
 
@@ -894,6 +912,22 @@
       return q(sb.from('client_payments').update({ paid_on: on }).eq('id', id));
     }
   };
+
+  /* Deja el PDF guardado en el portal y devuelve dónde quedó.
+     Es lo que después le permite al cliente leerlo y firmarlo.
+     Si la subida falla, el documento igual se guarda: el PDF ya quedó
+     bajado en el computador de quien lo generó. */
+  function keep(pr, kind, num, doc) {
+    var path = pr.id + '/docs/' + kind + '-' +
+      String(num).replace(/[^A-Za-z0-9_.-]/g, '') + '.pdf';
+    var blob;
+    try { blob = doc.output('blob'); } catch (e) { return Promise.resolve(null); }
+    return Promise.resolve(
+      sb.storage.from('project-files')
+        .upload(path, blob, { contentType: 'application/pdf' })
+    ).then(function (r) { return r && r.error ? null : path; })
+      .catch(function () { return null; });
+  }
 
   var MONTHS = ['January','February','March','April','May','June','July',
     'August','September','October','November','December'];
@@ -993,12 +1027,20 @@
     var recent = ctx.recent.length
       ? h('div', { class: 'list' }, ctx.recent.map(function (d) {
           var pr = ctx.projects.filter(function (x) { return x.id === d.project_id; })[0];
+          /* Un contrato sin firmar no es un trámite pendiente: es plata que
+             todavía no está asegurada. Por eso se marca. */
+          var falta = FIRMABLES[d.kind] && d.status === 'issued';
+          var abrir = h('button', { class: 'lnk', type: 'button' }, 'Abrir el PDF');
+          abrir.onclick = function () { openPdf(d, abrir); };
           return h('div', { class: 'card lrow slim' },
             h('span', null,
               h('b', null, KIND[d.kind] + ' #' + d.number),
               h('small', null, [pr ? pr.name : '', d.issued_on ? longDate(d.issued_on) : '',
-                d.total != null ? money(d.total) : ''].filter(Boolean).join(' · '))),
-            P.chip(ST[d.status] || d.status, d.status === 'void' ? 'bad' : 'ok'));
+                d.total != null ? money(d.total) : '',
+                d.signed_at ? 'firmado por ' + d.signed_name : ''].filter(Boolean).join(' · ')),
+              d.pdf_path ? abrir : null),
+            P.chip(falta ? 'Falta la firma' : (ST[d.status] || d.status),
+              d.status === 'void' ? 'bad' : falta ? 'warn' : 'ok'));
         }))
       : h('p', { class: 'mut small' }, 'Todavía no hay documentos.');
 
@@ -1008,6 +1050,22 @@
       h('div', { class: 'nelly-grid' }, cards),
       h('div', { class: 'sech' }, h('h3', null, 'Últimos documentos')),
       recent);
+  }
+
+  var FIRMABLES = { contract: 1, change_order: 1 };
+
+  /* Abre el PDF guardado. El enlace dura una hora y se pide en el momento:
+     nunca queda una dirección pública del contrato dando vueltas. */
+  function openPdf(d, btn) {
+    if (!d.pdf_path) { toast('Ese documento no quedó guardado en el portal.'); return; }
+    run(btn, function () {
+      return Promise.resolve(
+        sb.storage.from('project-files').createSignedUrl(d.pdf_path, 3600)
+      ).then(function (r) {
+        if (!r || r.error || !r.data || !r.data.signedUrl) throw (r && r.error) || new Error('No se pudo abrir.');
+        window.open(r.data.signedUrl, '_blank', 'noopener');
+      });
+    });
   }
 
   var KIND = { estimate: 'Estimado', contract: 'Contrato', change_order: 'Change order',
@@ -1069,13 +1127,16 @@
       return D.number(kind).then(function (num) {
         v.number = num;
         var doc = kind === 'invoice' ? buildInvoice(v, img) : buildReceipt(v, img);
-        doc.save('Proven-' + (kind === 'invoice' ? 'Invoice' : 'Receipt') + '-' + num + '.pdf');
-        var row = {
-          kind: kind, number: num, project_id: pr.id, status: 'issued',
-          issued_on: P.dkey(new Date()), total: v.total || v.amount || 0, body: v
-        };
-        if (extra) Object.keys(extra).forEach(function (k) { row[k] = extra[k]; });
-        return D.save(row);
+        return keep(pr, kind, num, doc).then(function (path) {
+          doc.save('Proven-' + (kind === 'invoice' ? 'Invoice' : 'Receipt') + '-' + num + '.pdf');
+          var row = {
+            kind: kind, number: num, project_id: pr.id, status: 'issued',
+            issued_on: P.dkey(new Date()), total: v.total || v.amount || 0,
+            body: v, pdf_path: path
+          };
+          if (extra) Object.keys(extra).forEach(function (k) { row[k] = extra[k]; });
+          return D.save(row);
+        });
       });
     });
   }
