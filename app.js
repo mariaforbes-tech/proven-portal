@@ -241,9 +241,12 @@
        Finanzas: quien publica no tiene por que ver los numeros. */
     const can = S.me.perms || {};
     const cont = can.content ? ['content'] : [];
-    if (S.me.is_office) return ['projects', 'attendance'].concat(cont, ['receipts', 'finance', 'shifts', 'docs']);
-    if (S.me.is_finance) return ['finance', 'nelly', 'receipts', 'projects', 'attendance'].concat(cont);
-    return ['projects', 'clock', 'shifts', 'docs', 'pay'].filter((k) => can[k]).concat(cont);
+    /* Nelly tambien es su propio interruptor: emite documentos con numero
+       y eso no se le da a alguien por el cargo que tenga, se le da a dedo. */
+    const nel = can.nelly ? ['nelly'] : [];
+    if (S.me.is_office) return ['projects', 'attendance'].concat(nel, cont, ['receipts', 'finance', 'shifts', 'docs']);
+    if (S.me.is_finance) return ['finance'].concat(nel, ['receipts', 'projects', 'attendance'], cont);
+    return ['projects', 'clock', 'shifts', 'docs', 'pay'].filter((k) => can[k]).concat(nel, cont);
   }
   function shell() {
     const tabs = tabsFor();
@@ -1390,7 +1393,7 @@
   }
 
   /* ============================ CENTRO DE MANDO (admin) ============================ */
-  const MODS = ['projects', 'clock', 'shifts', 'docs', 'pay', 'content'];
+  const MODS = ['projects', 'clock', 'shifts', 'docs', 'pay', 'content', 'nelly'];
   async function viewCmd(main) {
     const [people, defaults, docs, reqs, open, pcl, projs] = await Promise.all([API.profiles(), API.groupDefaults(), API.docs(), API.requirements(), API.openEntries(), API.projectClients().catch(() => []), API.projects().catch(() => [])]);
     /* Un cliente entró por la puerta del cliente: no es de la cuadrilla, no se le
