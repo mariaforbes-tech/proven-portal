@@ -2750,7 +2750,17 @@
     var upNum = h('input', { placeholder: 'Ej: 052' });
     var upBox = h('div', { class: 'two', hidden: true },
       field('El PDF del estimado', upFile), field('Número del estimado', upNum));
-    estSel.onchange = function () { upBox.hidden = estSel.value !== '__sube'; };
+    /* Escoger el estimado tiene que traer su plata, no solo su número.
+       Antes solo estampaba el número y el renglón quedaba en cero, así
+       que al generar decía que faltaban valores: parecía que el proyecto
+       estuviera mal cuando el que no hacía su parte era esto. */
+    estSel.onchange = function () {
+      upBox.hidden = estSel.value !== '__sube';
+      var x = ests.filter(function (o) { return String(o.number) === estSel.value; })[0];
+      if (!x || x.total == null) return;
+      fill(rowsBox);
+      addItem({ desc: 'Per Estimate #' + x.number, qty: 1, unit: Number(x.total) });
+    };
     upFile.onchange = function () {
       var f = upFile.files && upFile.files[0];
       if (!f || upNum.value.trim()) return;
