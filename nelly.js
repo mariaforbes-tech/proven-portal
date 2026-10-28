@@ -1134,29 +1134,23 @@
     /* El descuento lo hace el código, no Nelly. Cuando se lo pedíamos a
        ella en Reformular, recalculaba el trabajo entero y un descuento de
        $150 salía de $260. Aquí 150 son 150. */
+    /* Sin desplegables: los dos campos a la vista. Ella escribe en el que
+       piense, y el otro se acomoda solo. Nadie negocia pensando "cuanto le
+       bajo" y "en cuanto queda" al mismo tiempo, pero cambia de uno a otro
+       a mitad de frase, y esconder uno de los dos la obliga a traducir. */
     var desc = { monto: 0, texto: 'Descuento', modo: 'monto' };
-    var dModo = h('select', null,
-      h('option', { value: 'monto' }, 'Escribo cuánto le bajo'),
-      h('option', { value: 'final' }, 'Escribo en cuánto quiero que quede'));
     var dMonto = h('input', { type: 'number', step: '0.01', min: '0', value: '0' });
-    var dFinal = h('input', { type: 'number', step: '0.01', min: '0', value: '0' });
+    var dFinal = h('input', { type: 'number', step: '0.01', min: '0', class: 'big', value: '0' });
     var dTexto = h('input', { value: desc.texto, placeholder: 'Por qué se le baja' });
-    var cajaMonto = field('Cuánto le bajo', dMonto);
-    var cajaFinal = field('Precio final', dFinal);
-    cajaFinal.hidden = true;
 
-    dModo.onchange = function () {
-      desc.modo = dModo.value;
-      cajaMonto.hidden = desc.modo !== 'monto';
-      cajaFinal.hidden = desc.modo !== 'final';
+    dMonto.oninput = function () {
+      desc.modo = 'monto';
+      desc.monto = Math.max(0, Number(dMonto.value) || 0);
       recalc();
-      (desc.modo === 'monto' ? dMonto : dFinal).focus();
     };
-    /* Los dos campos se escriben solos entre ellos, pero nunca el que la
-       persona está usando: pisarle lo que escribe mientras teclea es la
-       forma más rápida de volver loco a cualquiera. */
-    dMonto.oninput = function () { desc.monto = Math.max(0, Number(dMonto.value) || 0); recalc(); };
-    dFinal.oninput = function () { recalc(); };
+    /* En cuanto toca el precio final, ese manda: si despues cambia un
+       renglon, el final se queda donde lo puso y el descuento se acomoda. */
+    dFinal.oninput = function () { desc.modo = 'final'; recalc(); };
     dTexto.oninput = function () { desc.texto = dTexto.value.trim() || 'Descuento'; };
 
     function recalc() {
@@ -1307,9 +1301,11 @@
       lista('Falta definir', res.preguntas),
       cuerpo,
       h('div', { class: 'card' }, h('h3', null, 'Totales'), totBox,
-        h('div', { class: 'mt6' }, field('Descuento', dModo)),
-        h('div', { class: 'two' }, cajaMonto, cajaFinal, field('Concepto', dTexto)),
-        h('p', { class: 'mut sm' }, 'Lo que pongas aquí lo resta el código, no Nelly. Si escribes 150, baja 150.'),
+        h('div', { class: 'precio-final mt6' },
+          h('div', null, h('small', null, 'EN CUÁNTO QUIERES QUE QUEDE'), dFinal),
+          h('div', null, h('small', null, 'Cuánto le bajas'), dMonto)),
+        field('Concepto del descuento', dTexto),
+        h('p', { class: 'mut sm' }, 'Escribe en el que quieras y el otro se acomoda. Lo resta el código, no Nelly: si pones 150, baja 150.'),
         (res.logistica && res.logistica.costo_viaje)
           ? h('p', { class: 'mut sm' }, 'Incluye ' + money(res.logistica.costo_viaje)
               + ' de viaje y parqueo, repartidos dentro del costo de la labor. El cliente no los ve como rengl\u00f3n: tu Rate Sheet dice que van incluidos en el d\u00eda.')

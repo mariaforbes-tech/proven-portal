@@ -532,6 +532,17 @@ details.more>summary{cursor:pointer;font-size:.86rem;color:var(--mut);font-weigh
 .card.lrow.slim input[type=number]{font:inherit;padding:8px 10px;border:1px solid var(--hair);
   border-radius:9px;width:120px;text-align:right}
 .mt6{margin-top:6px}
+/* El precio final es el numero que ella le promete al cliente por
+   telefono. Tiene que gritar mas que todo lo demas de esta pantalla. */
+.precio-final{display:grid;grid-template-columns:1.4fr 1fr;gap:12px;align-items:end;
+  background:#FDF3F2;border:1.5px solid #E4B4AE;border-radius:var(--r2);padding:14px}
+.precio-final small{display:block;font-size:.72rem;font-weight:800;letter-spacing:.05em;
+  text-transform:uppercase;color:#9A3B2E;margin-bottom:5px}
+.precio-final input{font:inherit;width:100%;padding:10px 12px;border:1px solid var(--hair);
+  border-radius:9px;text-align:right;background:#fff}
+.precio-final input.big{font-size:1.5rem;font-weight:800;letter-spacing:-.02em;
+  color:#9A3B2E;border-color:#E4B4AE;padding:12px 14px}
+@media (max-width:620px){.precio-final{grid-template-columns:1fr}}
 ul.bul{margin:0;padding-left:18px}
 ul.bul li{margin:4px 0;line-height:1.45}
 /* Lo que hay que mirar antes de mandar nada. */
