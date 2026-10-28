@@ -121,8 +121,13 @@
     return this;
   };
 
-  Sheet.prototype.section = function (n, title) {
-    this.room(46);
+  /* `need` es cuánto ocupa lo que viene DEBAJO del título. Un título solo
+     al pie de una página no es un título, es un error de impresión: el
+     lector pasa la hoja buscando algo que se quedó atrás. Si no se dice
+     nada se reservan dos líneas, que ya evita el caso feo. */
+  Sheet.prototype.section = function (n, title, need) {
+    var tope = H - M * 2 - 80;        // nunca pedir más de lo que cabe
+    this.room(46 + Math.min(need == null ? 44 : need, tope));
     this.y += 6;
     this.font(10.5, true).d.text(n + '. ' + title, M, this.y);
     this.y += 4;
@@ -335,6 +340,74 @@
     { k: 'check', t: 'Check' }, { k: 'card', t: 'Credit Card' },
     { k: 'cash', t: 'Cash' }, { k: 'other', t: 'Other' }
   ];
+
+  /* El estimado, con el formato de los tuyos: la cantidad va dentro de la
+     descripción y no en una columna aparte, labor y materiales en tablas
+     independientes, y nunca aparece lo que te cuesta. */
+  function buildEstimate(v, img) {
+    var d = new window.jspdf.jsPDF({ unit: 'pt', format: 'letter' });
+    var s = new Sheet(d, img, v.co);
+    var m = function (n) { return '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+
+    s.head('ESTIMATE', v.number,
+      [['Date', longDate(v.fecha)], ['Valid for', v.validez + ' days']],
+      v.titulo);
+
+    var n = 0;
+    s.section(++n, 'PREPARED FOR');
+    s.pairs([[['Client', v.bill.name || ''], ['Project Address', v.bill.address || '']]]);
+
+    if (v.resumen) {
+      s.section(++n, 'SCOPE OF WORK');
+      s.para(v.resumen);
+    }
+
+    function desc(f) {
+      var t = String(f.desc || '');
+      var q = Number(f.cantidad) || 0;
+      if (q && f.unidad && t.indexOf(String(q)) < 0) t += ', ' + q + ' ' + f.unidad;
+      return t;
+    }
+    var COLS = [{ t: 'Description', w: CW - 110 }, { t: 'Amount', w: 110, a: 'r' }];
+
+    var bloques = [
+      { k: 'labor',    t: 'LABOR',                 tot: 'LABOR TOTAL' },
+      { k: 'material', t: 'MATERIALS',             tot: 'MATERIALS TOTAL' },
+      { k: 'sub',      t: 'SUBCONTRACTED WORK',    tot: 'SUBCONTRACTED TOTAL' },
+      { k: 'otro',     t: 'OTHER PROJECT COSTS',   tot: 'OTHER COSTS TOTAL' }
+    ];
+    var resumenFilas = [];
+    bloques.forEach(function (b) {
+      var mias = v.filas.filter(function (f) { return f.grupo === b.k; });
+      if (!mias.length) return;
+      var sub = Math.round(mias.reduce(function (a, f) { return a + (Number(f.precio) || 0); }, 0) * 100) / 100;
+      /* El título viaja con su encabezado, sus renglones y su total. */
+      s.section(++n, b.t, 15 + mias.length * 22 + 34);
+      s.table(COLS,
+        mias.map(function (f) { return [desc(f), m(f.precio)]; }),
+        [[b.tot, m(sub)]]);
+      resumenFilas.push([b.t.charAt(0) + b.t.slice(1).toLowerCase(), m(sub)]);
+    });
+
+    s.section(++n, 'ESTIMATE TOTAL');
+    s.table([{ t: '', w: CW - 110 }, { t: '', w: 110, a: 'r' }],
+      resumenFilas, [['TOTAL', m(v.totales ? v.totales.total : 0)]]);
+
+    if (v.excluye && v.excluye.length) {
+      s.section(++n, 'NOT INCLUDED');
+      v.excluye.forEach(function (x) { s.para('- ' + x, 9); });
+    }
+
+    s.section(++n, 'TERMS');
+    s.para('VALID FOR ' + v.validez + ' days from date of issue.', 9, true);
+    s.para(v.formato === 'A'
+      ? 'Payment schedule: 30 percent at signing, 25 percent at phase one, 30 percent at phase two, 15 percent at completion.'
+      : 'Payment schedule: 50 percent at signing, 50 percent at completion.');
+    s.para('This estimate is based on the information and photographs provided. Hidden conditions found once work begins are quoted separately as a Change Order before any additional work proceeds.');
+
+    s.footer();
+    return d;
+  }
 
   function buildReceipt(v, img) {
     var d = new window.jspdf.jsPDF({ unit: 'pt', format: 'letter' });
@@ -732,6 +805,328 @@
       h('div', { class: 'acts' }, fix, gen));
   }
 
+  /* ================= ESTIMADO =================
+     El estimado se le hace muchas veces a un lead, cuando todavía no hay
+     proyecto. Por eso se puede hacer sin proyecto, escribiendo el cliente
+     a mano, y las fotos no se guardan en ningún lado: van del navegador
+     al estimador y ahí mueren. */
+
+  var FORMATOS = [
+    { k: 'A', t: 'A · Obra grande con opciones', d: 'Proyecto largo. Margen 30%.' },
+    { k: 'B', t: 'B · Trabajo chico, labor y materiales', d: 'Margen 35%.' },
+    { k: 'C', t: 'C · Solo labor', d: 'Margen 35%.' }
+  ];
+
+  /* Encoge la foto y la vuelve texto. El celular saca 4 MB y aquí no
+     sirve de nada: lo que importa es lo que se ve, no el peso. */
+  function leerFoto(file) {
+    var pre = (window.API && window.API.shrink)
+      ? window.API.shrink(file, 1400, 0.8) : Promise.resolve(file);
+    return pre.then(function (f) {
+      return new Promise(function (ok, no) {
+        var r = new FileReader();
+        r.onload = function () {
+          var s = String(r.result || ''), i = s.indexOf(',');
+          if (i < 0) return no(new Error('Esa foto no se pudo leer.'));
+          ok({ media_type: f.type || 'image/jpeg', data: s.slice(i + 1), nombre: f.name });
+        };
+        r.onerror = function () { no(new Error('Esa foto no se pudo leer.')); };
+        r.readAsDataURL(f);
+      });
+    });
+  }
+
+  function estimateFlow(main, ctx) {
+    show(function () { estimateWho(main, ctx); });
+  }
+
+  /* ---------- 1. ¿para quién es? ---------- */
+  function estimateWho(main, ctx) {
+    var lead = h('button', { class: 'card lrow slim pick', type: 'button' },
+      h('span', null, h('b', null, 'Es para un lead'),
+        h('small', null, 'Todavía no hay proyecto. Escribes el cliente y la dirección.')),
+      ico('plus', 16));
+    lead.onclick = function () {
+      show(function () { estimateForm(main, ctx, { lead: {} }); });
+    };
+
+    var box = h('div', { class: 'list' });
+    var find = h('input', { type: 'search', placeholder: 'Buscar un proyecto que ya existe…' });
+    function draw() {
+      var s2 = find.value.trim().toLowerCase();
+      var list = ctx.projects.filter(function (p2) {
+        if (!s2) return true;
+        return [p2.name, p2.client, p2.address].join(' ').toLowerCase().indexOf(s2) >= 0;
+      });
+      fill(box, list.length ? list.map(function (p2) {
+        var el = h('button', { class: 'card lrow slim pick', type: 'button' },
+          h('span', null, h('b', null, p2.name),
+            h('small', null, [p2.client, p2.address].filter(Boolean).join(' · '))),
+          h('b', null, p2.contract != null ? money(p2.contract) : '-'));
+        el.onclick = function () {
+          show(function () { estimateForm(main, ctx, { pr: p2 }); });
+        };
+        return el;
+      }) : h('p', { class: 'mut small' }, 'Ningún proyecto coincide.'));
+    }
+    find.oninput = draw;
+    draw();
+
+    fill(main,
+      h('div', { class: 'sech' }, h('h2', null, 'Estimado'), backBtn()),
+      robot('¿Para quién es este estimado?'),
+      lead,
+      h('div', { class: 'sech' }, h('h3', null, 'O un proyecto que ya existe')),
+      h('div', { class: 'mb' }, find),
+      box);
+  }
+
+  /* ---------- 2. lo que Nelly necesita saber ---------- */
+  function estimateForm(main, ctx, dest, keep) {
+    var st = keep || { formato: 'B', scope: '', zip: '', fotos: [] };
+    var esLead = !dest.pr;
+
+    var fmt = h('select', null, FORMATOS.map(function (f) {
+      return h('option', { value: f.k }, f.t);
+    }));
+    fmt.value = st.formato;
+    var fmtNota = h('p', { class: 'mut sm' });
+    function notaFmt() {
+      var f = FORMATOS.filter(function (x) { return x.k === fmt.value; })[0];
+      fill(fmtNota, f ? f.d : '');
+    }
+    fmt.onchange = notaFmt; notaFmt();
+
+    var cli = h('input', { placeholder: 'Nombre del cliente' });
+    var dir = h('input', { placeholder: 'Dirección de la obra' });
+    if (esLead) { cli.value = st.cliente || ''; dir.value = st.direccion || ''; }
+
+    var zip = h('input', { placeholder: '11375', inputmode: 'numeric', value: st.zip });
+    var scope = h('textarea', { rows: 6,
+      placeholder: 'Qué pidió el cliente, qué viste en el walkthrough, medidas si las tienes. Escribe como le hablarías a Miguel.' },
+      st.scope);
+
+    /* Las fotos ---------------------------------------------------- */
+    var fotos = st.fotos.slice();
+    var tira = h('div', { class: 'nelly-fotos' });
+    var file = h('input', { type: 'file', accept: 'image/*', multiple: true, hidden: true });
+    var addF = h('button', { class: 'btn ghost sm', type: 'button' }, ico('plus', 15), 'Agregar fotos');
+    addF.onclick = function () { file.click(); };
+    function pintaFotos() {
+      fill(tira, fotos.length ? fotos.map(function (f, i) {
+        var x = h('button', { class: 'ib', type: 'button', 'aria-label': 'Quitar esta foto' }, '×');
+        x.onclick = function () { fotos.splice(i, 1); pintaFotos(); };
+        return h('div', { class: 'nelly-foto' },
+          h('img', { src: 'data:' + f.media_type + ';base64,' + f.data, alt: f.nombre || '' }), x);
+      }) : h('p', { class: 'mut sm' }, 'Sin fotos. Nelly puede trabajar solo con lo que escribas, pero con fotos acierta mucho más.'));
+    }
+    file.onchange = function () {
+      var list = Array.prototype.slice.call(file.files || []).slice(0, 12 - fotos.length);
+      if (!list.length) return;
+      addF.disabled = true;
+      Promise.all(list.map(leerFoto)).then(function (r) {
+        fotos = fotos.concat(r); addF.disabled = false; file.value = ''; pintaFotos();
+      }).catch(function (e) {
+        addF.disabled = false; toast(P.errText(e), true);
+      });
+    };
+    pintaFotos();
+
+    var err = h('p', { class: 'err', role: 'alert' });
+    var go = h('button', { class: 'btn', type: 'button' }, 'Que Nelly lo arme');
+    go.onclick = function () {
+      fill(err);
+      if (esLead && !cli.value.trim()) { fill(err, 'Falta el nombre del cliente.'); return; }
+      if (!scope.value.trim() && !fotos.length) {
+        fill(err, 'Escribe el scope o agrega al menos una foto.'); return;
+      }
+      var v = {
+        formato: fmt.value, scope: scope.value.trim(), zip: zip.value.trim(),
+        fotos: fotos, cliente: cli.value.trim(), direccion: dir.value.trim()
+      };
+      run(go, function () { return pedirEstimado(main, ctx, dest, v); });
+    };
+
+    fill(main,
+      h('div', { class: 'sech' }, h('h2', null, 'Estimado'), backBtn()),
+      robot(esLead ? '¿De qué se trata el trabajo?'
+        : 'Cuéntame qué hay que cotizar en ' + dest.pr.name + '.'),
+      h('div', { class: 'card' },
+        field('Formato', fmt), fmtNota,
+        esLead ? h('div', { class: 'two' }, field('Cliente', cli), field('Dirección', dir)) : null,
+        field('Zipcode', zip, 'Con esto Nelly busca el precio de mercado de la zona.'),
+        field('El trabajo', scope)),
+      h('div', { class: 'card' },
+        h('div', { class: 'sech' }, h('h3', null, 'Fotos'), addF),
+        tira, file),
+      err,
+      h('div', { class: 'acts' }, go));
+  }
+
+  /* ---------- 3. la llamada ---------- */
+  function pedirEstimado(main, ctx, dest, v) {
+    fill(main,
+      h('div', { class: 'sech' }, h('h2', null, 'Estimado')),
+      robot('Estoy mirando las fotos, armando el scope y buscando precios de la zona. Esto se demora un poco.'),
+      h('div', { class: 'spin' }));
+
+    var body = {
+      formato: v.formato, scope: v.scope, zip: v.zip,
+      imagenes: v.fotos.map(function (f) { return { media_type: f.media_type, data: f.data }; })
+    };
+    if (dest.pr) body.project_id = dest.pr.id;
+    else body.lead = { cliente: v.cliente, direccion: v.direccion };
+
+    return sb.functions.invoke('estimate', { body: body }).then(function (r) {
+      if (r.error) throw r.error;
+      var res = r.data || {};
+      if (res.error) throw new Error(res.error);
+      show(function () { estimateReview(main, ctx, dest, v, res); });
+    }).catch(function (e) {
+      fill(main,
+        h('div', { class: 'sech' }, h('h2', null, 'Estimado'), backBtn()),
+        empty('No se pudo armar el estimado', P.errText(e)));
+    });
+  }
+
+  /* ---------- 4. revisar antes de nada ---------- */
+  var GRUPOS = [
+    { k: 'labor',    t: 'Labor' },
+    { k: 'material', t: 'Materiales' },
+    { k: 'sub',      t: 'Subcontratado' },
+    { k: 'otro',     t: 'Otros costos' }
+  ];
+
+  function estimateReview(main, ctx, dest, v, res) {
+    var filas = (res.partidas || []).map(function (p) { return Object.assign({}, p); });
+    var totBox = h('div', { class: 'list' });
+
+    function recalc() {
+      var por = {};
+      GRUPOS.forEach(function (g) {
+        por[g.k] = Math.round(filas.filter(function (f) { return f.grupo === g.k; })
+          .reduce(function (a, f) { return a + (Number(f.precio) || 0); }, 0) * 100) / 100;
+      });
+      var total = Math.round(GRUPOS.reduce(function (a, g) { return a + por[g.k]; }, 0) * 100) / 100;
+      var costo = Math.round(filas.reduce(function (a, f) { return a + (Number(f.costo) || 0); }, 0) * 100) / 100;
+      var mr = total > 0 ? Math.round(((total - costo) / total) * 1000) / 10 : 0;
+      res._tot = { por: por, total: total, costo: costo, margen: mr };
+
+      fill(totBox,
+        GRUPOS.filter(function (g) { return por[g.k] > 0; }).map(function (g) {
+          return h('div', { class: 'lrow slim' }, h('span', null, g.t), h('b', null, money(por[g.k])));
+        }).concat([
+          h('div', { class: 'lrow slim tot' }, h('span', null, 'TOTAL'), h('b', null, money(total))),
+          h('div', { class: 'lrow slim' },
+            h('span', { class: 'mut' }, 'Te cuesta'), h('span', { class: 'mut' }, money(costo))),
+          h('div', { class: 'lrow slim' },
+            h('span', { class: 'mut' }, 'Margen real'),
+            h('b', { class: mr < 15 ? 'bad' : mr < 20 ? 'warn' : 'ok' }, mr + '%'))
+        ]));
+    }
+
+    function tabla(g) {
+      var mias = filas.filter(function (f) { return f.grupo === g.k; });
+      if (!mias.length) return null;
+      return h('div', { class: 'card' },
+        h('h3', null, g.t),
+        h('div', { class: 'list' }, mias.map(function (f) {
+          var inp = h('input', { type: 'number', step: '0.01', value: String(f.precio == null ? 0 : f.precio) });
+          inp.oninput = function () { f.precio = Number(inp.value) || 0; recalc(); };
+          var det = [
+            f.grupo === 'labor'
+              ? ((f.dias || 0) + (f.dias === 1 ? ' día' : ' días') + ' · ' + (f.personas || 1) + (f.personas === 1 ? ' persona' : ' personas'))
+              : ((f.cantidad || '') + ' ' + (f.unidad || '')).trim(),
+            'te cuesta ' + money(f.costo || 0),
+            'margen ' + (f.margen_pct || 0) + '%'
+          ].filter(Boolean).join(' · ');
+          return h('div', { class: 'card lrow slim' },
+            h('span', null, h('b', null, f.desc || ''), h('small', null, det),
+              f.nota ? h('small', { class: 'mut' }, f.nota) : null),
+            inp);
+        })));
+    }
+
+    function lista(title, arr, cls) {
+      if (!arr || !arr.length) return null;
+      return h('div', { class: 'card' + (cls ? ' ' + cls : '') },
+        h('h3', null, title),
+        h('ul', { class: 'bul' }, arr.map(function (x) { return h('li', null, x); })));
+    }
+
+    var mk = res.mercado || {};
+    var mercado = (mk.bajo || mk.alto)
+      ? h('div', { class: 'card' },
+          h('h3', null, 'Lo que cobra el mercado en esa zona'),
+          h('div', { class: 'lrow slim' },
+            h('span', null, 'Rango encontrado'),
+            h('b', null, money(mk.bajo) + ' a ' + money(mk.alto))),
+          (mk.fuentes || []).length
+            ? h('div', { class: 'list' }, mk.fuentes.slice(0, 6).map(function (u) {
+                return h('a', { class: 'lnk', href: u, target: '_blank', rel: 'noopener noreferrer' }, u);
+              }))
+            : h('p', { class: 'mut sm' }, 'Sin fuentes. Toma el rango con pinzas.'))
+      : null;
+
+    var gen = h('button', { class: 'btn', type: 'button' }, 'Generar el PDF');
+    gen.onclick = function () {
+      run(gen, function () { return emitirEstimado(main, ctx, dest, v, res, filas); });
+    };
+    var volver = h('button', { class: 'btn ghost', type: 'button' }, 'Cambiar datos');
+    volver.onclick = function () { if (stack.length > 1) history.back(); };
+
+    recalc();
+    fill(main,
+      h('div', { class: 'sech' }, h('h2', null, res.titulo || 'Estimado'), backBtn()),
+      robot('Revisa los precios antes de que esto salga. El número final es tuyo, no mío.'),
+      res.resumen ? h('div', { class: 'card' }, h('p', null, res.resumen)) : null,
+      lista('Ojo con esto', res.avisos, 'warnbox'),
+      lista('Falta definir', res.preguntas),
+      GRUPOS.map(tabla),
+      h('div', { class: 'card' }, h('h3', null, 'Totales'), totBox),
+      mercado,
+      lista('Lo que NO incluye', res.excluye),
+      h('div', { class: 'acts' }, volver, gen));
+  }
+
+  /* ---------- 5. el PDF ---------- */
+  function emitirEstimado(main, ctx, dest, v, res, filas) {
+    var hoy = P.dkey(new Date());
+    return ensure().then(logo).then(function (img) {
+      return D.number('estimate').then(function (num) {
+        var d = {
+          co: ctx.co, number: num, fecha: hoy,
+          titulo: res.titulo || 'Project Estimate',
+          resumen: res.resumen || '',
+          bill: {
+            name: dest.pr ? (dest.pr.client_legal_name || dest.pr.client) : v.cliente,
+            address: dest.pr ? dest.pr.address : v.direccion
+          },
+          formato: v.formato,
+          validez: res.validez_dias || 15,
+          filas: filas, totales: res._tot,
+          excluye: res.excluye || []
+        };
+        var doc = buildEstimate(d, img);
+        var pr = dest.pr;
+        var guardar = pr
+          ? keep(pr, 'estimate', num, doc)
+          : Promise.resolve(null);
+        return guardar.then(function (path) {
+          doc.save('Proven-Estimate-' + num + '.pdf');
+          return D.save({
+            kind: 'estimate', number: num, project_id: pr ? pr.id : null,
+            status: 'issued', issued_on: hoy,
+            total: (res._tot && res._tot.total) || 0, body: d, pdf_path: path
+          });
+        });
+      });
+    }).then(function () {
+      toast('Estimado generado.');
+      view(main);
+    });
+  }
+
   /* ================= CHANGE ORDER ================= */
   var CO_RAZON = ['Client Request', 'Hidden Condition', 'Building Requirement', 'Other'];
 
@@ -875,6 +1270,7 @@
     logo: logo,
     buildInvoice: buildInvoice,
     buildReceipt: buildReceipt,
+    buildEstimate: buildEstimate,
     buildFromTemplate: buildFromTemplate,
     FOR_OPTS: FOR_OPTS,
     METHODS: METHODS,
@@ -972,7 +1368,7 @@
 
   /* ---------- el saludo y las opciones ---------- */
   var MENU = [
-    { k: 'estimate', t: 'Hacer un estimado', d: 'Lee las fotos y arma el PDF.', soon: true },
+    { k: 'estimate', t: 'Hacer un estimado', d: 'Lee las fotos y arma el PDF.' },
     { k: 'estimate_edit', t: 'Modificar un estimado', d: 'Busca uno y lo abre para cambiarlo.', soon: true },
     { k: 'contract', t: 'Hacer el contrato', d: 'Saca los datos del proyecto.' },
     { k: 'change_order', t: 'Hacer un change order', d: 'Cuelga del contrato.' },
@@ -1015,7 +1411,8 @@
         m.soon ? h('span', { class: 'chip mut' }, 'Pronto') : null);
       if (!m.soon) {
         el.onclick = function () {
-          if (m.k === 'invoice') invoiceFlow(main, ctx);
+          if (m.k === 'estimate') estimateFlow(main, ctx);
+          else if (m.k === 'invoice') invoiceFlow(main, ctx);
           else if (m.k === 'receipt') receiptFlow(main, ctx);
           else if (m.k === 'contract') contractFlow(main, ctx);
           else if (m.k === 'change_order') coFlow(main, ctx);

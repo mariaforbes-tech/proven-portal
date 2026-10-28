@@ -516,3 +516,19 @@ details.more>summary{cursor:pointer;font-size:.86rem;color:var(--mut);font-weigh
 .card.lrow.pick{cursor:pointer;width:100%;text-align:left;font:inherit;background:#fff}
 .card.lrow.pick:hover{border-color:var(--gold)}
 @media (max-width:620px){.nelly-item{grid-template-columns:1fr 1fr;gap:6px}}
+
+/* ---------- el estimado ---------- */
+.nelly-fotos{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px}
+.nelly-foto{position:relative;aspect-ratio:1;border-radius:9px;overflow:hidden;border:1px solid var(--hair)}
+.nelly-foto img{width:100%;height:100%;object-fit:cover;display:block}
+.nelly-foto .ib{position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:50%;
+  background:rgba(13,27,62,.78);color:#fff;border:0;line-height:1;cursor:pointer;font-size:.95rem}
+.nelly-foto .ib:hover{background:var(--navy)}
+/* La lista de partidas: la descripcion manda, el precio se edita al lado. */
+.card.lrow.slim input[type=number]{font:inherit;padding:8px 10px;border:1px solid var(--hair);
+  border-radius:9px;width:120px;text-align:right}
+ul.bul{margin:0;padding-left:18px}
+ul.bul li{margin:4px 0;line-height:1.45}
+/* Lo que hay que mirar antes de mandar nada. */
+.card.warnbox{background:#FBF0D8;border-color:#E6D49B}
+.card.warnbox h3{color:#7A5A0E}
