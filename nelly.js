@@ -840,45 +840,74 @@
     show(function () { estimateWho(main, ctx); });
   }
 
-  /* ---------- 1. ¿para quién es? ---------- */
+  /* ---------- 1. ¿para quién es? ----------
+     Un estimado siempre sale para alguien que ya está registrado: un lead
+     del CRM o un proyecto. Escribir el nombre a mano crearía un cliente
+     que no existe en ninguna lista, y después nadie le hace seguimiento. */
+  var ETAPAS = { new: 'Nuevo', contacted: 'Contactado', visit: 'Visita',
+    quoted: 'Cotizado', won: 'Ganado', lost: 'Perdido' };
+
   function estimateWho(main, ctx) {
-    var lead = h('button', { class: 'card lrow slim pick', type: 'button' },
-      h('span', null, h('b', null, 'Es para un lead'),
-        h('small', null, 'Todavía no hay proyecto. Escribes el cliente y la dirección.')),
-      ico('plus', 16));
-    lead.onclick = function () {
-      show(function () { estimateForm(main, ctx, { lead: {} }); });
-    };
-
-    var box = h('div', { class: 'list' });
-    var find = h('input', { type: 'search', placeholder: 'Buscar un proyecto que ya existe…' });
-    function draw() {
-      var s2 = find.value.trim().toLowerCase();
-      var list = ctx.projects.filter(function (p2) {
-        if (!s2) return true;
-        return [p2.name, p2.client, p2.address].join(' ').toLowerCase().indexOf(s2) >= 0;
-      });
-      fill(box, list.length ? list.map(function (p2) {
-        var el = h('button', { class: 'card lrow slim pick', type: 'button' },
-          h('span', null, h('b', null, p2.name),
-            h('small', null, [p2.client, p2.address].filter(Boolean).join(' · '))),
-          h('b', null, p2.contract != null ? money(p2.contract) : '-'));
-        el.onclick = function () {
-          show(function () { estimateForm(main, ctx, { pr: p2 }); });
-        };
-        return el;
-      }) : h('p', { class: 'mut small' }, 'Ningún proyecto coincide.'));
-    }
-    find.oninput = draw;
-    draw();
-
     fill(main,
       h('div', { class: 'sech' }, h('h2', null, 'Estimado'), backBtn()),
-      robot('¿Para quién es este estimado?'),
-      lead,
-      h('div', { class: 'sech' }, h('h3', null, 'O un proyecto que ya existe')),
-      h('div', { class: 'mb' }, find),
-      box);
+      h('div', { class: 'spin' }));
+
+    D.leads().catch(function () { return null; }).then(function (leads) {
+      var box = h('div', { class: 'list' });
+      var find = h('input', { type: 'search', placeholder: 'Buscar por nombre, barrio o dirección…' });
+
+      function draw() {
+        var s2 = find.value.trim().toLowerCase();
+        var hit = function (txt) { return !s2 || txt.toLowerCase().indexOf(s2) >= 0; };
+
+        /* Los leads abiertos primero: son los que están esperando precio. */
+        var abiertos = (leads || []).filter(function (l) {
+          return ['new', 'contacted', 'visit', 'quoted'].indexOf(l.stage) >= 0
+            && hit([l.name, l.borough, l.scope].join(' '));
+        });
+        var proys = ctx.projects.filter(function (p2) {
+          return hit([p2.name, p2.client, p2.address].join(' '));
+        });
+
+        function fila(titulo, sub, derecha, onPick) {
+          var el = h('button', { class: 'card lrow slim pick', type: 'button' },
+            h('span', null, h('b', null, titulo), sub ? h('small', null, sub) : null),
+            derecha);
+          el.onclick = onPick;
+          return el;
+        }
+
+        fill(box,
+          leads === null
+            ? h('p', { class: 'mut small' },
+                'No puedo leer el CRM con este usuario, así que solo salen los proyectos.')
+            : null,
+          abiertos.length ? h('div', { class: 'sech' }, h('h3', null, 'Leads del CRM')) : null,
+          abiertos.map(function (l) {
+            return fila(l.name,
+              [ETAPAS[l.stage] || l.stage, l.borough, l.scope].filter(Boolean).join(' · '),
+              l.value != null ? h('b', null, money(l.value)) : P.chip(ETAPAS[l.stage] || l.stage, 'mut'),
+              function () { show(function () { estimateForm(main, ctx, { lead: l }); }); });
+          }),
+          proys.length ? h('div', { class: 'sech' }, h('h3', null, 'Proyectos')) : null,
+          proys.map(function (p2) {
+            return fila(p2.name, [p2.client, p2.address].filter(Boolean).join(' · '),
+              h('b', null, p2.contract != null ? money(p2.contract) : '-'),
+              function () { show(function () { estimateForm(main, ctx, { pr: p2 }); }); });
+          }),
+          (!abiertos.length && !proys.length)
+            ? h('p', { class: 'mut small' }, 'Nada coincide. Si el cliente es nuevo, regístralo primero en el CRM.')
+            : null);
+      }
+      find.oninput = draw;
+      draw();
+
+      fill(main,
+        h('div', { class: 'sech' }, h('h2', null, 'Estimado'), backBtn()),
+        robot('¿Para quién es? Tiene que estar en el CRM o ser un proyecto.'),
+        h('div', { class: 'mb' }, find),
+        box);
+    });
   }
 
   /* ---------- 2. lo que Nelly necesita saber ---------- */
@@ -897,14 +926,16 @@
     }
     fmt.onchange = notaFmt; notaFmt();
 
-    var cli = h('input', { placeholder: 'Nombre del cliente' });
-    var dir = h('input', { placeholder: 'Dirección de la obra' });
-    if (esLead) { cli.value = st.cliente || ''; dir.value = st.direccion || ''; }
+    var L0 = dest.lead || {};
+    var dir = h('input', { placeholder: 'Dirección de la obra',
+      value: st.direccion != null ? st.direccion : (L0.borough || '') });
 
     var zip = h('input', { placeholder: '11375', inputmode: 'numeric', value: st.zip });
+    /* El scope del lead ya viene escrito en el CRM: no hay por qué
+       volverlo a escribir. */
     var scope = h('textarea', { rows: 6,
       placeholder: 'Qué pidió el cliente, qué viste en el walkthrough, medidas si las tienes. Escribe como le hablarías a Miguel.' },
-      st.scope);
+      st.scope || [L0.scope, L0.notes].filter(Boolean).join('\n\n'));
 
     /* Las fotos ---------------------------------------------------- */
     var fotos = st.fotos.slice();
@@ -936,24 +967,23 @@
     var go = h('button', { class: 'btn', type: 'button' }, 'Que Nelly lo arme');
     go.onclick = function () {
       fill(err);
-      if (esLead && !cli.value.trim()) { fill(err, 'Falta el nombre del cliente.'); return; }
       if (!scope.value.trim() && !fotos.length) {
         fill(err, 'Escribe el scope o agrega al menos una foto.'); return;
       }
       var v = {
         formato: fmt.value, scope: scope.value.trim(), zip: zip.value.trim(),
-        fotos: fotos, cliente: cli.value.trim(), direccion: dir.value.trim()
+        fotos: fotos, cliente: esLead ? L0.name : '', direccion: dir.value.trim()
       };
       run(go, function () { return pedirEstimado(main, ctx, dest, v); });
     };
 
     fill(main,
       h('div', { class: 'sech' }, h('h2', null, 'Estimado'), backBtn()),
-      robot(esLead ? '¿De qué se trata el trabajo?'
+      robot(esLead ? 'Estimado para ' + (L0.name || 'este lead') + '. ¿De qué se trata?'
         : 'Cuéntame qué hay que cotizar en ' + dest.pr.name + '.'),
       h('div', { class: 'card' },
         field('Formato', fmt), fmtNota,
-        esLead ? h('div', { class: 'two' }, field('Cliente', cli), field('Dirección', dir)) : null,
+        esLead ? field('Dirección', dir) : null,
         field('Zipcode', zip, 'Con esto Nelly busca el precio de mercado de la zona.'),
         field('El trabajo', scope)),
       h('div', { class: 'card' },
@@ -964,10 +994,12 @@
   }
 
   /* ---------- 3. la llamada ---------- */
-  function pedirEstimado(main, ctx, dest, v) {
+  function pedirEstimado(main, ctx, dest, v, ajuste) {
     fill(main,
       h('div', { class: 'sech' }, h('h2', null, 'Estimado')),
-      robot('Estoy mirando las fotos, armando el scope y buscando precios de la zona. Esto se demora un poco.'),
+      robot(ajuste
+        ? 'Lo estoy rehaciendo con lo que me dijiste.'
+        : 'Estoy mirando las fotos, armando el scope y buscando precios de la zona. Esto se demora un poco.'),
       h('div', { class: 'spin' }));
 
     var body = {
@@ -976,6 +1008,7 @@
     };
     if (dest.pr) body.project_id = dest.pr.id;
     else body.lead = { cliente: v.cliente, direccion: v.direccion };
+    if (ajuste) { body.previo = ajuste.previo; body.ajustes = ajuste.texto; }
 
     return sb.functions.invoke('estimate', { body: body }).then(function (r) {
       if (r.error) throw r.error;
@@ -1025,6 +1058,7 @@
         ]));
     }
 
+    var cuerpo = h('div');
     function tabla(g) {
       var mias = filas.filter(function (f) { return f.grupo === g.k; });
       if (!mias.length) return null;
@@ -1033,6 +1067,16 @@
         h('div', { class: 'list' }, mias.map(function (f) {
           var inp = h('input', { type: 'number', step: '0.01', value: String(f.precio == null ? 0 : f.precio) });
           inp.oninput = function () { f.precio = Number(inp.value) || 0; recalc(); };
+          /* Quitar una partida de verdad: sale del estimado y de las
+             cuentas. Si solo se pone en cero, el renglón igual se imprime
+             y el cliente lee algo que no va a pasar. */
+          var del = h('button', { class: 'ib', type: 'button',
+            'aria-label': 'Quitar esta partida' }, '×');
+          del.onclick = function () {
+            var i = filas.indexOf(f);
+            if (i >= 0) filas.splice(i, 1);
+            pinta();
+          };
           var det = [
             f.grupo === 'labor'
               ? ((f.dias || 0) + (f.dias === 1 ? ' día' : ' días') + ' · ' + (f.personas || 1) + (f.personas === 1 ? ' persona' : ' personas'))
@@ -1043,9 +1087,10 @@
           return h('div', { class: 'card lrow slim' },
             h('span', null, h('b', null, f.desc || ''), h('small', null, det),
               f.nota ? h('small', { class: 'mut' }, f.nota) : null),
-            inp);
+            h('span', { class: 'row gap' }, inp, del));
         })));
     }
+    function pinta() { fill(cuerpo, GRUPOS.map(tabla)); recalc(); }
 
     function lista(title, arr, cls) {
       if (!arr || !arr.length) return null;
@@ -1075,18 +1120,51 @@
     var volver = h('button', { class: 'btn ghost', type: 'button' }, 'Cambiar datos');
     volver.onclick = function () { if (stack.length > 1) history.back(); };
 
-    recalc();
+    /* Reformular: para cuando el problema no es un precio sino el scope.
+       Quitar una partida se hace con la X; esto es para "sácame toda la
+       cocina" o "el piso va en opción aparte". */
+    var refo = h('button', { class: 'btn ghost', type: 'button' }, ico('edit', 15), 'Reformular');
+    refo.onclick = function () {
+      var txt = h('textarea', { rows: 4,
+        placeholder: 'Qué hay que cambiar. Por ejemplo: quita toda la demolición del baño, el cliente la hace él. O: separa el piso como opción aparte.' });
+      var ok = h('button', { class: 'btn', type: 'button' }, 'Que lo rehaga');
+      var m2 = modal('Reformular el estimado', h('div', null,
+        h('p', { class: 'mut sm' },
+          'Lo que le digas que quite, lo quita, no lo vuelve a meter con otro nombre. Lo que no menciones queda igual.'),
+        field('Qué cambiar', txt),
+        h('div', { class: 'acts' }, ok)));
+      ok.onclick = function () {
+        var t2 = txt.value.trim();
+        if (!t2) { txt.focus(); return; }
+        m2.close();
+        /* Se le manda lo que hay AHORA en pantalla, no lo que devolvió la
+           primera vez: si ella ya borró partidas o cambió precios, eso
+           cuenta. */
+        var previo = {
+          titulo: res.titulo, resumen: res.resumen,
+          partidas: filas.map(function (f) {
+            return { desc: f.desc, grupo: f.grupo, dias: f.dias, personas: f.personas,
+              cantidad: f.cantidad, unidad: f.unidad, costo_unitario: f.costo_unitario };
+          }),
+          excluye: res.excluye
+        };
+        pedirEstimado(main, ctx, dest, v, { previo: previo, texto: t2 });
+      };
+      setTimeout(function () { txt.focus(); }, 60);
+    };
+
+    pinta();
     fill(main,
       h('div', { class: 'sech' }, h('h2', null, res.titulo || 'Estimado'), backBtn()),
-      robot('Revisa los precios antes de que esto salga. El número final es tuyo, no mío.'),
+      robot('Revisa antes de que esto salga. El número final es tuyo, no mío.'),
       res.resumen ? h('div', { class: 'card' }, h('p', null, res.resumen)) : null,
       lista('Ojo con esto', res.avisos, 'warnbox'),
       lista('Falta definir', res.preguntas),
-      GRUPOS.map(tabla),
+      cuerpo,
       h('div', { class: 'card' }, h('h3', null, 'Totales'), totBox),
       mercado,
       lista('Lo que NO incluye', res.excluye),
-      h('div', { class: 'acts' }, volver, gen));
+      h('div', { class: 'acts' }, volver, refo, gen));
   }
 
   /* ---------- 5. el PDF ---------- */
@@ -1121,8 +1199,16 @@
           });
         });
       });
+    }).then(function (row) {
+      /* El CRM se entera solo. Si no, mañana alguien llama a este cliente
+         a preguntarle si ya le pasamos precio. */
+      if (!dest.lead || !dest.lead.id) return row;
+      return D.quoted(dest.lead.id, (res._tot && res._tot.total) || 0,
+        'Estimado ' + row.number + ' enviado el ' + hoy)
+        .then(function () { return row; })
+        .catch(function () { return row; });
     }).then(function () {
-      toast('Estimado generado.');
+      toast(dest.lead ? 'Estimado generado. El lead quedó en Cotizado.' : 'Estimado generado.');
       view(main);
     });
   }
@@ -1306,6 +1392,16 @@
     },
     markPaid: function (id, on) {
       return q(sb.from('client_payments').update({ paid_on: on }).eq('id', id));
+    },
+    leads: function () {
+      return q(sb.from('funnel_leads').select('*').order('updated_at', { ascending: false }).limit(500));
+    },
+    /* Cuando sale el estimado, el lead pasa a "cotizado" con su valor. Si
+       no, el CRM queda diciendo que ese cliente sigue esperando precio. */
+    quoted: function (id, valor, nota) {
+      return q(sb.from('funnel_leads').update({
+        stage: 'quoted', value: valor, next_step: nota
+      }).eq('id', id));
     }
   };
 
