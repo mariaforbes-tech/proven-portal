@@ -925,7 +925,16 @@
             return fila(l.name,
               [ETAPAS[l.stage] || l.stage, l.borough, l.scope].filter(Boolean).join(' · '),
               l.value != null ? h('b', null, money(l.value)) : P.chip(ETAPAS[l.stage] || l.stage, 'mut'),
-              function () { show(function () { estimateForm(main, ctx, { lead: l }); }); });
+              function () {
+                /* Un lead puede ser alguien que ya trabajó contigo. Si su
+                   nombre coincide con un cliente conocido, se le llevan sus
+                   direcciones: son de la persona, no de la etiqueta que
+                   tenga puesta en el CRM. */
+                var c0 = porCliente[(l.name || '').trim().toLowerCase()];
+                show(function () {
+                  estimateForm(main, ctx, { lead: l, dirs: c0 ? c0.dirs.slice() : [] });
+                });
+              });
           }),
           clis.length ? h('div', { class: 'sech' }, h('h3', null, 'Clientes que ya trabajaron contigo')) : null,
           clis.map(function (c) {
@@ -984,7 +993,9 @@
     var L0 = dest.lead || dest.cli || {};
     /* Un cliente con varias propiedades escoge; uno con una sola la ve
        escrita; uno nuevo la escribe. Y la que escriba queda guardada. */
-    var conocidas = (L0.dirs || []).filter(Boolean);
+    var conocidas = (dest.dirs || L0.dirs || []).filter(Boolean);
+    /* La que viene escrita en el lead también cuenta como conocida. */
+    if (L0.borough && conocidas.indexOf(L0.borough) < 0) conocidas = conocidas.concat([L0.borough]);
     var dir = h('input', { placeholder: 'Dirección de la obra',
       value: st.direccion != null ? st.direccion : (L0.borough || '') });
     var dirSel = null, dirCampo = dir;
