@@ -495,7 +495,11 @@ details.more>summary{cursor:pointer;font-size:.86rem;color:var(--mut);font-weigh
 /* --- Nelly --- */
 .nelly-hi{display:flex;gap:14px;align-items:flex-start;background:linear-gradient(135deg,#F6EDD6 0%,#FBFAF7 100%);
   border:1px solid var(--gold3);border-radius:var(--r2);padding:16px 18px;margin-bottom:16px}
-.nelly-hi .bot{font-size:2rem;line-height:1}
+/* Nelly viene con su propio fondo crema, del mismo tono que este recuadro,
+   asi que no hace falta recortarla: se funde sola. */
+.nelly-hi .bot{width:88px;height:88px;flex:none;border-radius:12px;object-fit:cover;
+  background:#EFE7DA;display:block}
+@media (max-width:620px){.nelly-hi .bot{width:66px;height:66px}}
 .nelly-hi b{display:block;font-size:1.05rem;margin-bottom:2px}
 .nelly-hi p{margin:0}
 .nelly-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;margin-bottom:20px}

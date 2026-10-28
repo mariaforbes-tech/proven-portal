@@ -722,7 +722,7 @@
 
     fill(main,
       h('div', { class: 'sech' }, h('h2', null, 'Contrato · ' + pr.name), backBtn()),
-      robot('Marco las casillas y lleno los datos. El texto legal no se toca.'),
+      robot('Marco las casillas y lleno los datos. El texto legal no se toca.', 'contrato'),
       missing(pr).length ? h('p', { class: 'mut sm warnline' },
         'Al proyecto le falta: ' + missing(pr).join(', ') + '.') : null,
       h('div', { class: 'card' },
@@ -788,7 +788,7 @@
 
     fill(main,
       h('div', { class: 'sech' }, h('h2', null, 'Revisa antes de generar'), backBtn()),
-      robot('Mira sobre todo las casillas y las secciones que van a salir anuladas.'),
+      robot('Mira sobre todo las casillas y las secciones que van a salir anuladas.', 'contrato'),
       h('div', { class: 'card' },
         h('div', { class: 'list' }, [
           ['Proyecto', pr.name],
@@ -904,7 +904,7 @@
 
       fill(main,
         h('div', { class: 'sech' }, h('h2', null, 'Estimado'), backBtn()),
-        robot('¿Para quién es? Tiene que estar en el CRM o ser un proyecto.'),
+        robot('¿Para quién es? Tiene que estar en el CRM o ser un proyecto.', 'saludo'),
         h('div', { class: 'mb' }, find),
         box);
     });
@@ -980,7 +980,7 @@
     fill(main,
       h('div', { class: 'sech' }, h('h2', null, 'Estimado'), backBtn()),
       robot(esLead ? 'Estimado para ' + (L0.name || 'este lead') + '. ¿De qué se trata?'
-        : 'Cuéntame qué hay que cotizar en ' + dest.pr.name + '.'),
+        : 'Cuéntame qué hay que cotizar en ' + dest.pr.name + '.', 'estimado'),
       h('div', { class: 'card' },
         field('Formato', fmt), fmtNota,
         esLead ? field('Dirección', dir) : null,
@@ -999,7 +999,8 @@
       h('div', { class: 'sech' }, h('h2', null, 'Estimado')),
       robot(ajuste
         ? 'Lo estoy rehaciendo con lo que me dijiste.'
-        : 'Estoy mirando las fotos, armando el scope y buscando precios de la zona. Esto se demora un poco.'),
+        : 'Estoy mirando las fotos, armando el scope y buscando precios de la zona. Esto se demora un poco.',
+        'pensando'),
       h('div', { class: 'spin' }));
 
     var body = {
@@ -1018,7 +1019,7 @@
     }).catch(function (e) {
       fill(main,
         h('div', { class: 'sech' }, h('h2', null, 'Estimado'), backBtn()),
-        empty('No se pudo armar el estimado', P.errText(e)));
+        robot('No pude armarlo. ' + P.errText(e), 'ups'));
     });
   }
 
@@ -1156,7 +1157,7 @@
     pinta();
     fill(main,
       h('div', { class: 'sech' }, h('h2', null, res.titulo || 'Estimado'), backBtn()),
-      robot('Revisa antes de que esto salga. El número final es tuyo, no mío.'),
+      robot('Revisa antes de que esto salga. El número final es tuyo, no mío.', 'pensando'),
       res.resumen ? h('div', { class: 'card' }, h('p', null, res.resumen)) : null,
       lista('Ojo con esto', res.avisos, 'warnbox'),
       lista('Falta definir', res.preguntas),
@@ -1265,7 +1266,7 @@
 
     fill(main,
       h('div', { class: 'sech' }, h('h2', null, 'Change order · ' + pr.name), backBtn()),
-      robot('Los change orders no llevan descuento. Eso lo dice tu propio contrato.'),
+      robot('Los change orders no llevan descuento. Eso lo dice tu propio contrato.', 'change'),
       summaryCard(sum),
       h('div', { class: 'card' },
         h('div', { class: 'two' }, field('Razón del cambio', razon), field('Días adicionales de obra', dias)),
@@ -1328,7 +1329,7 @@
 
     fill(main,
       h('div', { class: 'sech' }, h('h2', null, 'Revisa antes de generar'), backBtn()),
-      robot('Esto cambia el valor del contrato. Revisa el total nuevo.'),
+      robot('Esto cambia el valor del contrato. Revisa el total nuevo.', 'change'),
       h('div', { class: 'card' },
         h('div', { class: 'list' }, v.items.map(function (i) {
           return h('div', { class: 'lrow slim' },
@@ -1490,12 +1491,18 @@
       });
   }
 
-  function robot(line) {
+  /* Nelly, en la pose que corresponda a lo que se está haciendo. Antes
+     todas las pantallas repetían "¿Qué vamos a hacer hoy?" aunque ya
+     estuvieras a medio camino, que se leía raro. Ahora el saludo es solo
+     del inicio. */
+  function robot(line, pose) {
     return h('div', { class: 'nelly-hi' },
-      h('div', { class: 'bot' }, '🤖'),
-      h('div', null,
-        h('b', null, '¿Qué vamos a hacer hoy?'),
-        h('p', { class: 'mut sm' }, line || 'Escoge una y yo pregunto solo lo que falte.')));
+      h('img', { class: 'bot', src: 'nelly/' + (pose || 'saludo') + '.webp',
+        alt: 'Nelly', width: '72', height: '72', loading: 'lazy' }),
+      h('div', null, line
+        ? h('p', null, line)
+        : [h('b', null, '¿Qué vamos a hacer hoy?'),
+           h('p', { class: 'mut sm' }, 'Escoge una y yo pregunto solo lo que falte.')]));
   }
 
   function home(main, ctx) {
@@ -1588,7 +1595,7 @@
     draw();
     fill(main,
       h('div', { class: 'sech' }, h('h2', null, title), backBtn()),
-      robot('¿Para qué proyecto?'),
+      robot('¿Para qué proyecto?', 'saludo'),
       h('div', { class: 'mb' }, find),
       box);
   }
@@ -1731,7 +1738,7 @@
       h('div', { class: 'sech' }, h('h2', null, 'Invoice · ' + pr.name), backBtn()),
       faltan.length ? h('p', { class: 'mut sm warnline' },
         'Al proyecto le falta: ' + faltan.join(', ') + '. El documento sale igual, pero esos campos van vacíos.') : null,
-      robot('Escoge qué se cobra. Lo demás lo traigo yo.'),
+      robot('Escoge qué se cobra. Lo demás lo traigo yo.', 'invoice'),
       summaryCard(sum),
       h('div', { class: 'card' },
         field('Qué cuota se cobra', sel),
@@ -1779,7 +1786,7 @@
 
     fill(main,
       h('div', { class: 'sech' }, h('h2', null, 'Revisa antes de generar'), backBtn()),
-      robot('Una vez lo genere, el documento no se edita. Si algo está mal, cámbialo ahora.'),
+      robot('Una vez lo genere, el documento no se edita. Si algo está mal, cámbialo ahora.', 'invoice'),
       h('div', { class: 'card' },
         h('h3', null, pr.name),
         h('div', { class: 'list' }, v.items.map(function (i) {
@@ -1875,7 +1882,7 @@
 
     fill(main,
       h('div', { class: 'sech' }, h('h2', null, 'Receipt · ' + pr.name), backBtn()),
-      robot('Dime cómo entró la plata y con qué número de confirmación.'),
+      robot('Dime cómo entró la plata y con qué número de confirmación.', 'receipt'),
       summaryCard(sum),
       h('div', { class: 'card' },
         field('Qué cuota paga', sel),
@@ -1930,7 +1937,7 @@
 
     fill(main,
       h('div', { class: 'sech' }, h('h2', null, 'Revisa antes de generar'), backBtn()),
-      robot('Una vez emitido, el recibo no se edita. Si algo está mal, cámbialo ahora.'),
+      robot('Una vez emitido, el recibo no se edita. Si algo está mal, cámbialo ahora.', 'receipt'),
       h('div', { class: 'card' },
         h('div', { class: 'lrow slim tot' }, h('span', null, 'RECIBIDO'), h('b', null, money(v.amount))),
         h('div', { class: 'list' }, [
