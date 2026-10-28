@@ -390,8 +390,16 @@
     });
 
     s.section(++n, 'ESTIMATE TOTAL');
+    var T = v.totales || {};
+    /* El descuento va escrito, no escondido bajando los renglones. Un
+       cliente que ve lo que le rebajaron sabe lo que le rebajaron, y el
+       día que pida lo mismo otra vez hay de dónde agarrarse. */
+    if (T.descuento > 0) {
+      resumenFilas.push(['Subtotal', m(T.bruto)]);
+      resumenFilas.push([T.desc_texto || 'Discount', '- ' + m(T.descuento)]);
+    }
     s.table([{ t: '', w: CW - 110 }, { t: '', w: 110, a: 'r' }],
-      resumenFilas, [['TOTAL', m(v.totales ? v.totales.total : 0)]]);
+      resumenFilas, [['TOTAL', m(T.total || 0)]]);
 
     if (v.excluye && v.excluye.length) {
       s.section(++n, 'NOT INCLUDED');
@@ -1123,21 +1131,37 @@
     var filas = (res.partidas || []).map(function (p) { return Object.assign({}, p); });
     var totBox = h('div', { class: 'list' });
 
+    /* El descuento lo hace el código, no Nelly. Cuando se lo pedíamos a
+       ella en Reformular, recalculaba el trabajo entero y un descuento de
+       $150 salía de $260. Aquí 150 son 150. */
+    var desc = { monto: 0, texto: 'Descuento' };
+    var dMonto = h('input', { type: 'number', step: '0.01', min: '0', value: '0' });
+    var dTexto = h('input', { value: desc.texto, placeholder: 'Por qu\u00e9 se le baja' });
+    dMonto.oninput = function () { desc.monto = Math.max(0, Number(dMonto.value) || 0); recalc(); };
+    dTexto.oninput = function () { desc.texto = dTexto.value.trim() || 'Descuento'; };
+
     function recalc() {
       var por = {};
       GRUPOS.forEach(function (g) {
         por[g.k] = Math.round(filas.filter(function (f) { return f.grupo === g.k; })
           .reduce(function (a, f) { return a + (Number(f.precio) || 0); }, 0) * 100) / 100;
       });
-      var total = Math.round(GRUPOS.reduce(function (a, g) { return a + por[g.k]; }, 0) * 100) / 100;
+      var bruto = Math.round(GRUPOS.reduce(function (a, g) { return a + por[g.k]; }, 0) * 100) / 100;
+      var dto = Math.min(desc.monto, bruto);
+      var total = Math.round((bruto - dto) * 100) / 100;
       var costo = Math.round(filas.reduce(function (a, f) { return a + (Number(f.costo) || 0); }, 0) * 100) / 100;
       var mr = total > 0 ? Math.round(((total - costo) / total) * 1000) / 10 : 0;
-      res._tot = { por: por, total: total, costo: costo, margen: mr };
+      res._tot = { por: por, bruto: bruto, descuento: dto, desc_texto: desc.texto,
+                   total: total, costo: costo, margen: mr };
 
       fill(totBox,
         GRUPOS.filter(function (g) { return por[g.k] > 0; }).map(function (g) {
           return h('div', { class: 'lrow slim' }, h('span', null, g.t), h('b', null, money(por[g.k])));
-        }).concat([
+        }).concat(dto > 0 ? [
+          h('div', { class: 'lrow slim' }, h('span', null, 'Subtotal'), h('b', null, money(bruto))),
+          h('div', { class: 'lrow slim' }, h('span', { class: 'ok' }, desc.texto),
+            h('b', { class: 'ok' }, '\u2212 ' + money(dto)))
+        ] : []).concat([
           h('div', { class: 'lrow slim tot' }, h('span', null, 'TOTAL'), h('b', null, money(total))),
           h('div', { class: 'lrow slim' },
             h('span', { class: 'mut' }, 'Te cuesta'), h('span', { class: 'mut' }, money(costo))),
@@ -1250,7 +1274,16 @@
       lista('Ojo con esto', res.avisos, 'warnbox'),
       lista('Falta definir', res.preguntas),
       cuerpo,
-      h('div', { class: 'card' }, h('h3', null, 'Totales'), totBox),
+      h('div', { class: 'card' }, h('h3', null, 'Totales'), totBox,
+        h('div', { class: 'two mt6' }, field('Descuento', dMonto), field('Concepto', dTexto)),
+        h('p', { class: 'mut sm' }, 'Lo que escribas aqu\u00ed se resta tal cual del total. Ni un peso m\u00e1s.'),
+        (res.logistica && res.logistica.costo_viaje)
+          ? h('p', { class: 'mut sm' }, 'Incluye ' + money(res.logistica.costo_viaje)
+              + ' de viaje y parqueo, repartidos dentro del costo de la labor. El cliente no los ve como rengl\u00f3n: tu Rate Sheet dice que van incluidos en el d\u00eda.')
+          : null,
+        res.uso ? h('p', { class: 'mut sm' }, 'Este estimado le cost\u00f3 a la empresa '
+          + ((res.uso.input_tokens || 0) + (res.uso.output_tokens || 0)).toLocaleString('en-US')
+          + ' tokens de API.') : null),
       mercado,
       lista('Lo que NO incluye', res.excluye),
       h('div', { class: 'acts' }, volver, refo, gen));
