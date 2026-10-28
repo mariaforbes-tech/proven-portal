@@ -854,7 +854,28 @@
 
     D.leads().catch(function () { return null; }).then(function (leads) {
       var box = h('div', { class: 'list' });
-      var find = h('input', { type: 'search', placeholder: 'Buscar por nombre, barrio o dirección…' });
+      var find = h('input', { type: 'search', placeholder: 'Buscar cliente, lead o proyecto…' });
+
+      /* Los clientes que ya trabajaron contigo. Un cliente que vuelve no es
+         un lead ni es el proyecto viejo: es un trabajo nuevo para alguien
+         que ya conoces, y hay que poder cotizarle sin colgarlo de una obra
+         que ya terminó. */
+      var porCliente = {};
+      ctx.projects.forEach(function (p2) {
+        var n = (p2.client || '').trim();
+        if (!n) return;
+        var k = n.toLowerCase();
+        if (!porCliente[k]) porCliente[k] = { name: n, obras: 0, ult: null, dirs: [] };
+        var c = porCliente[k];
+        c.obras++;
+        if (p2.address && c.dirs.indexOf(p2.address) < 0) c.dirs.push(p2.address);
+        if (!c.ult || String(p2.starts_on || '') > String(c.ult.starts_on || '')) c.ult = p2;
+      });
+      var clientes = Object.keys(porCliente).map(function (k) { return porCliente[k]; })
+        .sort(function (a, b) {
+          if (b.obras !== a.obras) return b.obras - a.obras;
+          return a.name.localeCompare(b.name);
+        });
 
       function draw() {
         var s2 = find.value.trim().toLowerCase();
@@ -864,6 +885,9 @@
         var abiertos = (leads || []).filter(function (l) {
           return ['new', 'contacted', 'visit', 'quoted'].indexOf(l.stage) >= 0
             && hit([l.name, l.borough, l.scope].join(' '));
+        });
+        var clis = clientes.filter(function (c) {
+          return hit([c.name].concat(c.dirs).join(' '));
         });
         var proys = ctx.projects.filter(function (p2) {
           return hit([p2.name, p2.client, p2.address].join(' '));
@@ -889,13 +913,28 @@
               l.value != null ? h('b', null, money(l.value)) : P.chip(ETAPAS[l.stage] || l.stage, 'mut'),
               function () { show(function () { estimateForm(main, ctx, { lead: l }); }); });
           }),
+          clis.length ? h('div', { class: 'sech' }, h('h3', null, 'Clientes que ya trabajaron contigo')) : null,
+          clis.map(function (c) {
+            return fila(c.name,
+              [c.obras + (c.obras === 1 ? ' obra' : ' obras'),
+               c.dirs.slice(0, 2).join(' · ')].filter(Boolean).join(' · '),
+              c.obras > 1 ? P.chip('Recurrente', 'gold') : null,
+              function () {
+                show(function () {
+                  estimateForm(main, ctx, { cli: {
+                    name: c.name,
+                    borough: (c.ult && c.ult.address) || c.dirs[0] || ''
+                  } });
+                });
+              });
+          }),
           proys.length ? h('div', { class: 'sech' }, h('h3', null, 'Proyectos')) : null,
           proys.map(function (p2) {
             return fila(p2.name, [p2.client, p2.address].filter(Boolean).join(' · '),
               h('b', null, p2.contract != null ? money(p2.contract) : '-'),
               function () { show(function () { estimateForm(main, ctx, { pr: p2 }); }); });
           }),
-          (!abiertos.length && !proys.length)
+          (!abiertos.length && !clis.length && !proys.length)
             ? h('p', { class: 'mut small' }, 'Nada coincide. Si el cliente es nuevo, regístralo primero en el CRM.')
             : null);
       }
@@ -926,7 +965,9 @@
     }
     fmt.onchange = notaFmt; notaFmt();
 
-    var L0 = dest.lead || {};
+    /* Puede venir de un lead del CRM o de un cliente que ya trabajó
+       contigo. En los dos casos todavía no hay proyecto. */
+    var L0 = dest.lead || dest.cli || {};
     var dir = h('input', { placeholder: 'Dirección de la obra',
       value: st.direccion != null ? st.direccion : (L0.borough || '') });
 
@@ -979,7 +1020,7 @@
 
     fill(main,
       h('div', { class: 'sech' }, h('h2', null, 'Estimado'), backBtn()),
-      robot(esLead ? 'Estimado para ' + (L0.name || 'este lead') + '. ¿De qué se trata?'
+      robot(esLead ? 'Estimado para ' + (L0.name || 'este cliente') + '. ¿De qué se trata?'
         : 'Cuéntame qué hay que cotizar en ' + dest.pr.name + '.', 'estimado'),
       h('div', { class: 'card' },
         field('Formato', fmt), fmtNota,
