@@ -531,6 +531,7 @@ details.more>summary{cursor:pointer;font-size:.86rem;color:var(--mut);font-weigh
 /* La lista de partidas: la descripcion manda, el precio se edita al lado. */
 .card.lrow.slim input[type=number]{font:inherit;padding:8px 10px;border:1px solid var(--hair);
   border-radius:9px;width:120px;text-align:right}
+.mt6{margin-top:6px}
 ul.bul{margin:0;padding-left:18px}
 ul.bul li{margin:4px 0;line-height:1.45}
 /* Lo que hay que mirar antes de mandar nada. */

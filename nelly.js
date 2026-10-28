@@ -852,7 +852,11 @@
       h('div', { class: 'sech' }, h('h2', null, 'Estimado'), backBtn()),
       h('div', { class: 'spin' }));
 
-    D.leads().catch(function () { return null; }).then(function (leads) {
+    Promise.all([
+      D.leads().catch(function () { return null; }),
+      D.addresses().catch(function () { return []; })
+    ]).then(function (r0) {
+      var leads = r0[0], dirsBD = r0[1] || [];
       var box = h('div', { class: 'list' });
       var find = h('input', { type: 'search', placeholder: 'Buscar cliente, lead o proyecto…' });
 
@@ -870,6 +874,16 @@
         c.obras++;
         if (p2.address && c.dirs.indexOf(p2.address) < 0) c.dirs.push(p2.address);
         if (!c.ult || String(p2.starts_on || '') > String(c.ult.starts_on || '')) c.ult = p2;
+      });
+      /* Las guardadas mandan: ahí están también las que no tienen un
+         proyecto detrás, como la segunda propiedad de un cliente a la que
+         solo le hemos cotizado. */
+      dirsBD.forEach(function (d) {
+        var n = (d.client_name || '').trim();
+        if (!n || !d.address) return;
+        var k = n.toLowerCase();
+        if (!porCliente[k]) porCliente[k] = { name: n, obras: 0, ult: null, dirs: [] };
+        if (porCliente[k].dirs.indexOf(d.address) < 0) porCliente[k].dirs.push(d.address);
       });
       var clientes = Object.keys(porCliente).map(function (k) { return porCliente[k]; })
         .sort(function (a, b) {
@@ -922,7 +936,7 @@
               function () {
                 show(function () {
                   estimateForm(main, ctx, { cli: {
-                    name: c.name,
+                    name: c.name, dirs: c.dirs.slice(),
                     borough: (c.ult && c.ult.address) || c.dirs[0] || ''
                   } });
                 });
@@ -968,8 +982,30 @@
     /* Puede venir de un lead del CRM o de un cliente que ya trabajó
        contigo. En los dos casos todavía no hay proyecto. */
     var L0 = dest.lead || dest.cli || {};
+    /* Un cliente con varias propiedades escoge; uno con una sola la ve
+       escrita; uno nuevo la escribe. Y la que escriba queda guardada. */
+    var conocidas = (L0.dirs || []).filter(Boolean);
     var dir = h('input', { placeholder: 'Dirección de la obra',
       value: st.direccion != null ? st.direccion : (L0.borough || '') });
+    var dirSel = null, dirCampo = dir;
+    if (conocidas.length) {
+      dirSel = h('select', null,
+        conocidas.map(function (d2) { return h('option', { value: d2 }, d2); })
+          .concat([h('option', { value: '__otra' }, 'Otra direcci\u00f3n, la escribo yo')]));
+      dirSel.value = conocidas.indexOf(dir.value) >= 0 ? dir.value : conocidas[0];
+      dir.value = '';
+      dir.hidden = true;
+      dirSel.onchange = function () {
+        var otra = dirSel.value === '__otra';
+        dir.hidden = !otra;
+        if (otra) { dir.value = ''; dir.focus(); }
+      };
+      dirCampo = h('div', null, dirSel, h('div', { class: 'mt6' }, dir));
+    }
+    function direccion() {
+      if (!dirSel) return dir.value.trim();
+      return dirSel.value === '__otra' ? dir.value.trim() : dirSel.value;
+    }
 
     var zip = h('input', { placeholder: '11375', inputmode: 'numeric', value: st.zip });
     /* El scope del lead ya viene escrito en el CRM: no hay por qué
@@ -1013,7 +1049,7 @@
       }
       var v = {
         formato: fmt.value, scope: scope.value.trim(), zip: zip.value.trim(),
-        fotos: fotos, cliente: esLead ? L0.name : '', direccion: dir.value.trim()
+        fotos: fotos, cliente: esLead ? L0.name : '', direccion: direccion()
       };
       run(go, function () { return pedirEstimado(main, ctx, dest, v); });
     };
@@ -1024,7 +1060,7 @@
         : 'Cuéntame qué hay que cotizar en ' + dest.pr.name + '.', 'estimado'),
       h('div', { class: 'card' },
         field('Formato', fmt), fmtNota,
-        esLead ? field('Dirección', dir) : null,
+        esLead ? field('Dirección de la obra', dirCampo) : null,
         field('Zipcode', zip, 'Con esto Nelly busca el precio de mercado de la zona.'),
         field('El trabajo', scope)),
       h('div', { class: 'card' },
@@ -1242,6 +1278,10 @@
         });
       });
     }).then(function (row) {
+      /* La dirección queda guardada para ese cliente. La próxima vez sale
+         en la lista y nadie la vuelve a escribir mal. */
+      var quien = dest.pr ? (dest.pr.client_legal_name || dest.pr.client) : v.cliente;
+      if (quien && v.direccion) D.addAddress(quien.trim(), v.direccion.trim());
       /* El CRM se entera solo. Si no, mañana alguien llama a este cliente
          a preguntarle si ya le pasamos precio. */
       if (!dest.lead || !dest.lead.id) return row;
@@ -1437,6 +1477,17 @@
     },
     leads: function () {
       return q(sb.from('funnel_leads').select('*').order('updated_at', { ascending: false }).limit(500));
+    },
+    addresses: function () {
+      return q(sb.from('client_addresses').select('*').order('client_name').limit(2000));
+    },
+    /* Se guarda sola la primera vez que se usa. La próxima ya está en la
+       lista y nadie la vuelve a escribir mal. */
+    addAddress: function (cliente, dir) {
+      /* Si ya existe, la base la rechaza y aquí no pasa nada: el estimado
+         no se cae por una dirección repetida. */
+      return q(sb.from('client_addresses').insert({ client_name: cliente, address: dir }))
+        .catch(function () { return null; });
     },
     /* Cuando sale el estimado, el lead pasa a "cotizado" con su valor. Si
        no, el CRM queda diciendo que ese cliente sigue esperando precio. */
