@@ -97,7 +97,7 @@
     var ry = top + 58;
     (rows || []).forEach(function (r) {
       this.font(7, true, GREY).d.text(String(r[0]).toUpperCase(), rx, ry, { align: 'right' });
-      this.font(9.5, false, NAVY).d.text(String(r[1] || '—'), rx, ry + 11, { align: 'right' });
+      this.font(9.5, false, NAVY).d.text(String(r[1] || '-'), rx, ry + 11, { align: 'right' });
       ry += 25;
     }, this);
 
@@ -140,7 +140,7 @@
         if (!cell) return;
         var x = M + col * j;
         self.font(7, true, GREY).d.text(String(cell[0]).toUpperCase(), x, self.y);
-        self.font(10, false).d.text(String(cell[1] == null || cell[1] === '' ? '—' : cell[1]),
+        self.font(10, false).d.text(String(cell[1] == null || cell[1] === '' ? '-' : cell[1]),
           x, self.y + 12, { maxWidth: col - 14 });
       });
       self.y += lh;
@@ -272,7 +272,7 @@
        que un día no coincidan. */
     s.section(1, 'BILL TO & PROJECT');
     s.pairs([
-      [['Bill to — Client Full Legal Name', v.bill.name], ['Project Address', v.project.address]],
+      [['Bill to, client full legal name', v.bill.name], ['Project Address', v.project.address]],
       [['Client Address', v.bill.address], ['Original Contract Date', v.project.contract_date]],
       [['Client Email', v.bill.email], ['Client Phone', v.bill.phone]]
     ]);
@@ -345,7 +345,7 @@
       [['Payment received', v.received_on], ['Date issued', v.issued_on]],
       'Proof of payment received.');
 
-    s.font(10.5, true).d.text('PAYMENT RECEIVED — THANK YOU', M, s.y); s.y += 14;
+    s.font(10.5, true).d.text('PAYMENT RECEIVED, THANK YOU', M, s.y); s.y += 14;
     s.para('Proven Solutions USA LLC acknowledges receipt of the payment described below, applied to the signed Services Agreement identified on this receipt.', 9, false, GREY);
 
     s.section(1, 'RECEIVED FROM');
@@ -381,7 +381,7 @@
       [['REMAINING BALANCE', m(v.sum.balance)]]);
 
     s.section(6, 'ISSUED BY');
-    s.pairs([[['Issued by — Printed Name', v.issued_by], ['Date Issued', v.issued_on]]]);
+    s.pairs([[['Issued by, printed name', v.issued_by], ['Date Issued', v.issued_on]]]);
 
     s.y += 8;
     s.para('This receipt confirms payment only. It does not waive any right or obligation under the signed Services Agreement, including any Change Order, remaining balance, or Stop-Work provision. Payments received are held in trust under Article 3-A of the New York Lien Law, as stated in the Agreement.', 8.5, false, GREY);
