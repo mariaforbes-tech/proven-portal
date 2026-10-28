@@ -1851,6 +1851,7 @@
      Lo que no esté en la tabla sale tal cual: el nombre de un proyecto o
      de un cliente nunca se toca. */
   var EN = {
+    "El invoice quedó guardado, pero no pude crear el cobro: ": "The invoice was saved, but I couldn't create the receivable: ",
     "Súbeme el PDF y yo saco de ahí el proyecto, el cliente y el total.": "Send me the PDF and I'll pull the project, the client and the total out of it.",
     "No pude sacar el número del PDF. Escríbelo.": "I couldn't get the number from the PDF. Type it in.",
     "Revísalo: de aquí salen el proyecto y el invoice.": "Check it: the project and the invoice come out of this.",
@@ -2612,10 +2613,44 @@
             body: v, pdf_path: path
           };
           if (extra) Object.keys(extra).forEach(function (k) { row[k] = extra[k]; });
-          return D.save(row);
+          return D.save(row).then(function (guardado) {
+            if (kind !== 'invoice') return guardado;
+            return cobrar(pr, v, extra, num).then(function () { return guardado; })
+              .catch(function (e) {
+                /* El invoice ya quedó guardado: tumbar todo por esto sería
+                   peor. Pero callarlo es peor todavía, porque ella creería
+                   que Ana ya lo tiene en la lista. */
+                toast('El invoice quedó guardado, pero no pude crear el cobro: ' + P.errText(e), true);
+                return guardado;
+              });
+          });
         });
       });
     });
+  }
+
+  /* Un invoice emitido es plata que el cliente ya debe. Si solo queda
+     guardado como documento, a Ana no le aparece en los cobros y nadie lo
+     persigue. Esto cierra ese hueco en el mismo momento en que se emite.
+
+     Si el invoice cobra una cuota que ya estaba programada, esa cuota ya
+     está en la lista de Ana: solo se le ajusta la fecha de vencimiento.
+     El monto no se toca, porque reescribirle el plan de pagos del
+     contrato desde un invoice es un efecto que nadie pidió. */
+  function cobrar(pr, v, extra, num) {
+    if (extra && extra.payment_id) {
+      if (!extra.due_on) return Promise.resolve();
+      return Promise.resolve(P.API.saveClientPayment({
+        id: extra.payment_id, due_on: extra.due_on
+      }));
+    }
+    return Promise.resolve(P.API.saveClientPayment({
+      project_id: pr.id,
+      label: 'Invoice ' + num,
+      amount: Number(v.total) || 0,
+      due_on: (extra && extra.due_on) || null,
+      sort: Date.now() % 100000
+    }));
   }
 
   function summaryCard(sum, title) {
@@ -2822,7 +2857,9 @@
         h('div', { class: 'lrow slim' }, h('span', null, 'Subtotal'), h('b', null, money(v.subtotal))),
         v.tax ? h('div', { class: 'lrow slim' }, h('span', null, 'Impuesto'), h('b', null, money(v.tax))) : null,
         h('div', { class: 'lrow slim tot' }, h('span', null, 'TOTAL A COBRAR'), h('b', null, money(v.total))),
-        h('p', { class: 'mut sm' }, 'Fecha ' + longDate(v.date) + ' · vence ' + longDate(v.due)),
+        /* En pedazos, no concatenado: así cada trozo de texto pasa por la
+           traducción y no queda "Date … · vence …" a medio camino. */
+        h('p', { class: 'mut sm' }, 'Fecha ', longDate(v.date), ' · vence ', longDate(v.due)),
         v.estimate_number
           ? h('p', { class: 'mut sm' }, 'Sale del estimado ' + v.estimate_number + '.')
           : null),
@@ -2840,7 +2877,10 @@
             'Estás cobrando ' + money(Math.abs(diff)) + (diff > 0 ? ' de más.' : ' de menos.')
             + ' Escribe por qué: queda guardado con el invoice.'),
           field('Razón', reason)) : h('p', { class: 'mut sm' }, 'Coincide con la cuota.')) : null,
-      summaryCard(sum),
+      /* Sin contrato este cuadro sale en ceros, justo debajo del aviso que
+         dice que no va a haber resumen de cuenta. Decir las dos cosas en
+         la misma pantalla es contradecirse. */
+      Number(sum.contract_original) ? summaryCard(sum) : null,
       h('div', { class: 'acts' }, fix, gen));
   }
 
