@@ -1448,6 +1448,11 @@
             kind: 'estimate', number: num, project_id: pr ? pr.id : null,
             status: 'issued', issued_on: hoy,
             total: (res._tot && res._tot.total) || 0, body: d, pdf_path: path
+          }).catch(function (e) {
+            /* El PDF ya se bajo. Si la base lo rechaza hay que decirlo
+               fuerte: si no, ella cree que quedo archivado y no esta. */
+            throw new Error('El PDF ' + num + ' se bajo a tu computador, pero NO quedo guardado en el portal: '
+              + P.errText(e) + ' No lo mandes todavia.');
           });
         });
       });
@@ -1471,8 +1476,12 @@
         'Estimado ' + row.number + ' enviado el ' + hoy)
         .then(function () { return row; })
         .catch(function () { return row; });
-    }).then(function () {
-      toast(dest.lead ? 'Estimado generado. El lead quedó en Cotizado.' : 'Estimado generado.');
+    }).then(function (row) {
+      /* Decir cual salio, no solo que salio. "Estimado generado" a secas
+         deja a cualquiera dudando de si de verdad quedo guardado. */
+      var n = row && row.number ? ' ' + row.number : '';
+      toast('Estimado' + n + ' emitido y guardado.'
+        + (dest.lead ? ' El lead quedó en Cotizado.' : ''));
       view(main);
     });
   }
