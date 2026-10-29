@@ -1125,14 +1125,24 @@
     });
   }
 
+  /* Los tipos que se pueden registrar desde un PDF. Son los mismos que
+     Nelly emite: la puerta de entrada y la de salida tienen que coincidir. */
+  var TIPOS = [
+    { k: 'estimate', t: 'Estimado' },
+    { k: 'invoice', t: 'Invoice' },
+    { k: 'contract', t: 'Contrato' },
+    { k: 'change_order', t: 'Change order' },
+    { k: 'receipt', t: 'Recibo' }
+  ];
+
   function estimateAutoFlow(main, ctx) {
     show(function () {
       var file = h('input', { type: 'file', accept: 'application/pdf,.pdf' });
-      var go = h('button', { class: 'btn', type: 'button' }, 'Leer el estimado');
+      var go = h('button', { class: 'btn', type: 'button' }, 'Leerlo');
 
       function falló(e) {
         fill(main,
-          h('div', { class: 'sech' }, h('h2', null, 'Subir un estimado'), backBtn()),
+          h('div', { class: 'sech' }, h('h2', null, 'Subir un documento'), backBtn()),
           robot('No pude leerlo. ' + P.errText(e), 'ups'));
       }
 
@@ -1142,7 +1152,7 @@
         run(go, function () {
           return leerPdf(f).then(function (b64) {
             fill(main,
-              h('div', { class: 'sech' }, h('h2', null, 'Subir un estimado')),
+              h('div', { class: 'sech' }, h('h2', null, 'Subir un documento')),
               robot('Estoy leyendo el PDF. Esto se demora un poco.', 'pensando'),
               h('div', { class: 'spin' }));
             return sb.functions.invoke('estimate', { body: { modo: 'leer', pdf: b64 } });
@@ -1156,10 +1166,10 @@
       };
 
       fill(main,
-        h('div', { class: 'sech' }, h('h2', null, 'Subir un estimado'), backBtn()),
-        robot('Súbeme el PDF y yo saco de ahí el proyecto, el cliente y el total.', 'estimado'),
+        h('div', { class: 'sech' }, h('h2', null, 'Subir un documento'), backBtn()),
+        robot('Súbeme el PDF y yo saco de ahí el resto. Sirve para un estimado, un invoice, un contrato, un change order o un recibo.', 'estimado'),
         h('div', { class: 'card' },
-          field('El PDF del estimado', file),
+          field('El PDF', file),
           h('div', { class: 'acts' }, go)));
     });
   }
@@ -1177,6 +1187,11 @@
       var mm = String(file.name || '').replace(/\.pdf$/i, '').match(/(\d{2,})(?!.*\d)/);
       if (mm) numero = mm[1];
     }
+
+    var tipoSel = h('select', null, TIPOS.map(function (x) {
+      return h('option', { value: x.k }, x.t);
+    }));
+    tipoSel.value = TIPOS.filter(function (x) { return x.k === d.tipo; })[0] ? d.tipo : 'estimate';
 
     var fNom = h('input', { required: true, value: titulo || cliente || '' });
     var fCli = h('input', { value: cliente });
@@ -1202,12 +1217,13 @@
           p2.name + (p2.address ? ' \u00b7 ' + p2.address : ''));
       })));
 
-    var save = h('button', { class: 'btn', type: 'button' }, 'Crear y seguir al invoice');
+    var save = h('button', { class: 'btn', type: 'button' }, 'Guardarlo');
     save.onclick = function () {
+      var kind = tipoSel.value;
       var num = fNum.value.trim();
       if (!num) { toast('No pude sacar el número del PDF. Escríbelo.', true); fNum.focus(); return; }
       var tot = Number(fTot.value);
-      if (!isFinite(tot) || tot <= 0) { toast('Falta el total del estimado.', true); fTot.focus(); return; }
+      if (!isFinite(tot) || tot <= 0) { toast('Falta el total.', true); fTot.focus(); return; }
       var nom = fNom.value.trim();
       if (!nom) { toast('Falta el nombre del proyecto.', true); fNom.focus(); return; }
 
@@ -1225,51 +1241,109 @@
         });
 
         return hacer.then(function (pr) {
-          return subirEstimado(pr, { num: num, file: file, total: tot, titulo: nom,
+          return subirDoc(pr, {
+            kind: kind, num: num, file: file, total: tot, titulo: nom,
             cliente: fCli.value.trim(), direccion: fDir.value.trim(),
-            renglones: Array.isArray(d.renglones) ? d.renglones : [] })
-            .then(function (row) {
-              /* El proyecto acaba de nacer: que aparezca ya en el tracker,
-                 aunque ella se salga antes de emitir el invoice. */
-              return sincronizar(pr, row && row.id).then(function () { return row; });
-            })
-            .then(function (row) {
-              return Promise.all([
-                D.payments(pr.id).catch(function () { return []; }),
-                D.summary(pr.id).catch(function () { return []; })
-              ]).then(function (r) {
-                var hoy = P.dkey(new Date());
-                var ests = [{ id: row.id, number: num, issued_on: hoy, total: tot }];
-                /* El invoice arranca con una sola línea por el total del
-                   estimado. Los estimados de ella son suma global: abrirlos
-                   renglón por renglón le mostraría al cliente precios por
-                   partida que el estimado nunca mostró. */
-                var keep = {
-                  for: 'final', date: hoy, due: addDays(hoy, 7), tax: 0, notes: '',
-                  payment_id: null, reason: '', estimate_number: num,
-                  items: [{ desc: 'Per Estimate #' + num + (nom ? ' \u2014 ' + nom : ''),
-                    qty: 1, unit: tot, total: tot }]
-                };
-                toast('Estimado ' + num + ' guardado.');
-                show(function () {
-                  invoiceForm(main, ctx, pr, r[0] || [], (r[1] || [])[0] || {}, ests, keep);
-                });
-              });
-            });
+            fecha: d.fecha, vence: d.vence,
+            renglones: Array.isArray(d.renglones) ? d.renglones : []
+          }).then(function (row) {
+            return sincronizar(pr, row && row.id).then(function () { return { pr: pr, row: row }; });
+          }).then(function (x) {
+            toast(nombreTipo(kind) + ' ' + num + ' guardado.');
+            /* De un estimado sigue el invoice, que es lo que ella iba a
+               hacer de todos modos. De los demás no sigue nada: el
+               documento ya existía, esto era meterlo al portal. */
+            if (kind !== 'estimate') { view(main); return; }
+            return seguirAlInvoice(main, ctx, x.pr, x.row, num, tot, nom);
+          });
         });
       });
     };
 
     fill(main,
       h('div', { class: 'sech' }, h('h2', null, 'Esto fue lo que leí'), backBtn()),
-      robot('Revísalo: de aquí salen el proyecto y el invoice.', 'estimado'),
+      robot('Revísalo antes de guardarlo. Si algo se leyó mal, córrigelo encima.', 'estimado'),
       h('div', { class: 'card' },
+        h('div', { class: 'two' }, field('Qué documento es', tipoSel), field('Número', fNum)),
         parecidos.length ? field('¿Ya existe este proyecto?', cual) : null,
         field('Nombre del proyecto', fNom),
-        h('div', { class: 'two' }, field('Cliente', fCli), field('Número del estimado', fNum)),
+        h('div', { class: 'two' }, field('Cliente', fCli), field('Total ($)', fTot)),
         field('Dirección', fDir),
-        field('Total del estimado ($)', fTot),
         h('div', { class: 'acts' }, save)));
+  }
+
+  function nombreTipo(k) {
+    var x = TIPOS.filter(function (t2) { return t2.k === k; })[0];
+    return x ? x.t : k;
+  }
+
+  /* Meter al portal un documento que ya existe en PDF.
+     No es un caso raro: el estimador todavía no está al 100%, hay
+     documentos de antes del portal, y a veces uno se emite y se manda
+     antes de que quede guardado. Sin esta puerta, cada uno de esos casos
+     obliga a rehacer a mano un trabajo que ya estaba hecho. */
+  function subirDoc(pr, x) {
+    return keepFile(pr, x.kind, x.num, x.file).then(function (path) {
+      return D.save({
+        kind: x.kind, number: x.num, project_id: pr.id,
+        status: 'issued',
+        /* La fecha del documento, no la de hoy: si se emitió el martes,
+           en la cuenta del cliente tiene que seguir siendo del martes. */
+        issued_on: fechaValida(x.fecha) || P.dkey(new Date()),
+        due_on: fechaValida(x.vence),
+        total: x.total == null ? null : x.total,
+        body: {
+          externo: true, archivo: x.file.name, titulo: x.titulo || '',
+          bill: { name: x.cliente || '', address: x.direccion || '' },
+          leido: x.renglones || []
+        },
+        pdf_path: path
+      });
+    }).then(function (row) {
+      /* Un invoice es plata que el cliente debe, venga de donde venga. */
+      if (x.kind !== 'invoice') return row;
+      return Promise.resolve(P.API.saveClientPayment({
+        project_id: pr.id, label: 'Invoice ' + x.num,
+        amount: Number(x.total) || 0, due_on: fechaValida(x.vence),
+        sort: Date.now() % 100000
+      })).then(function () { return row; })
+        .catch(function (e) {
+          toast('El invoice quedó guardado, pero no pude crear el cobro: ' + P.errText(e), true);
+          return row;
+        });
+    }).catch(function (e) {
+      var t2 = P.errText(e);
+      /* El choque de número es el error que de verdad va a pasar. */
+      throw new Error(/duplicate|unique/i.test(t2)
+        ? 'Ya hay un ' + nombreTipo(x.kind).toLowerCase() + ' con el número ' + x.num + '.' : t2);
+    });
+  }
+
+  function fechaValida(s) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(String(s || '')) ? String(s) : null;
+  }
+
+  function seguirAlInvoice(main, ctx, pr, row, num, tot, nom) {
+    return Promise.all([
+      D.payments(pr.id).catch(function () { return []; }),
+      D.summary(pr.id).catch(function () { return []; })
+    ]).then(function (r) {
+      var hoy = P.dkey(new Date());
+      var ests = [{ id: row.id, number: num, issued_on: hoy, total: tot }];
+      /* El invoice arranca con una sola línea por el total del estimado.
+         Los estimados de ella son suma global: abrirlos renglón por
+         renglón le mostraría al cliente precios por partida que el
+         estimado nunca mostró. */
+      var keep = {
+        for: 'final', date: hoy, due: addDays(hoy, 7), tax: 0, notes: '',
+        payment_id: null, reason: '', estimate_number: num,
+        items: [{ desc: 'Per Estimate #' + num + (nom ? ' \u2014 ' + nom : ''),
+          qty: 1, unit: tot, total: tot }]
+      };
+      show(function () {
+        invoiceForm(main, ctx, pr, r[0] || [], (r[1] || [])[0] || {}, ests, keep);
+      });
+    });
   }
 
   /* ---------- 2. lo que Nelly necesita saber ---------- */
@@ -1858,6 +1932,17 @@
      Lo que no esté en la tabla sale tal cual: el nombre de un proyecto o
      de un cliente nunca se toca. */
   var EN = {
+    "Súbeme el PDF y yo saco de ahí el resto. Sirve para un estimado, un invoice, un contrato, un change order o un recibo.": "Send me the PDF and I'll pull the rest out of it. Works for an estimate, an invoice, a contract, a change order or a receipt.",
+    "Revísalo antes de guardarlo. Si algo se leyó mal, córrigelo encima.": "Check it before saving. If something was read wrong, type over it.",
+    "Un PDF que ya existe. Lo leo y lo registro.": "A PDF that already exists. I read it and file it.",
+    "Subir un documento": "Upload a document",
+    "Qué documento es": "What document is it",
+    "Falta el total.": "The total is missing.",
+    "Guardarlo": "Save it",
+    "Leerlo": "Read it",
+    "Estimado": "Estimate",
+    "Recibo": "Receipt",
+    "Total ($)": "Total ($)",
     "Quedó guardado, pero el tracker o el Drive no se actualizaron: ": "It was saved, but the tracker or Drive were not updated: ",
     "El invoice quedó guardado, pero no pude crear el cobro: ": "The invoice was saved, but I couldn't create the receivable: ",
     "Súbeme el PDF y yo saco de ahí el proyecto, el cliente y el total.": "Send me the PDF and I'll pull the project, the client and the total out of it.",
@@ -2331,28 +2416,13 @@
 
   /* Guardar en el portal un estimado hecho por fuera. Lo usan los dos
      caminos: el del menú y el de dentro del invoice. */
+  /* El estimado que se sube desde dentro del invoice. Es el mismo camino
+     que subir cualquier documento, con el tipo ya decidido. */
   function subirEstimado(pr, sube) {
-    return keepFile(pr, 'estimate', sube.num, sube.file).then(function (path) {
-      return D.save({
-        kind: 'estimate', number: sube.num, project_id: pr.id,
-        status: 'issued', issued_on: P.dkey(new Date()),
-        total: sube.total == null ? null : sube.total,
-        /* Se guarda lo que Nelly leyó del PDF, no un estimado armado por
-           ella: por eso 'externo'. Modificar un estimado sabe distinguirlo
-           y no intenta abrirlo como si tuviera renglones propios. */
-        body: {
-          externo: true, archivo: sube.file.name,
-          titulo: sube.titulo || '', bill: { name: sube.cliente || '', address: sube.direccion || '' },
-          leido: sube.renglones || []
-        },
-        pdf_path: path
-      });
-    }).catch(function (e) {
-      /* El choque de número es el error que de verdad va a pasar, y el
-         mensaje crudo de Postgres no le dice nada a nadie. */
-      var t2 = P.errText(e);
-      throw new Error(/duplicate|unique/i.test(t2)
-        ? 'Ya hay un estimado con el número ' + sube.num + '. Ponle otro.' : t2);
+    return subirDoc(pr, {
+      kind: 'estimate', num: sube.num, file: sube.file, total: sube.total,
+      titulo: sube.titulo, cliente: sube.cliente, direccion: sube.direccion,
+      renglones: sube.renglones
     });
   }
 
@@ -2401,7 +2471,7 @@
   var MENU = [
     { k: 'estimate', t: 'Hacer un estimado', d: 'Lee las fotos y arma el PDF.' },
     { k: 'estimate_edit', t: 'Modificar un estimado', d: 'Abre uno viejo y sale uno nuevo.' },
-    { k: 'estimate_up', t: 'Subir un estimado', d: 'Lo leo y armo el proyecto y el invoice.' },
+    { k: 'estimate_up', t: 'Subir un documento', d: 'Un PDF que ya existe. Lo leo y lo registro.' },
     { k: 'contract', t: 'Hacer el contrato', d: 'Saca los datos del proyecto.' },
     { k: 'change_order', t: 'Hacer un change order', d: 'Cuelga del contrato.' },
     { k: 'invoice', t: 'Hacer un invoice', d: 'El portal calcula, tú confirmas.' },
