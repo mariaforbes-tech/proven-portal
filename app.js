@@ -99,10 +99,19 @@
   const csvCell = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
 
   /* ---------- toast / modal / confirm ---------- */
+  /* Un aviso bueno puede irse solo; un error no. Si el mensaje se
+     desvanece antes de que alcances a leerlo, no sirve de nada: uno sabe
+     que algo falló y no qué. Los errores se quedan hasta que los cierres,
+     y su texto se puede seleccionar para copiarlo. */
   function toast(msg, bad) {
-    const el = h('div', { class: 'toast' + (bad ? ' bad' : ''), role: 'status' }, msg);
-    document.body.append(el); setTimeout(() => el.classList.add('show'), 10);
-    setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 300); }, 3200);
+    const el = h('div', { class: 'toast' + (bad ? ' bad' : ''), role: bad ? 'alert' : 'status' },
+      h('span', null, msg),
+      bad ? h('button', { class: 'tx', type: 'button', 'aria-label': t('close') }, '×') : null);
+    document.body.append(el);
+    setTimeout(() => el.classList.add('show'), 10);
+    const cerrar = () => { el.classList.remove('show'); setTimeout(() => el.remove(), 300); };
+    if (bad) el.querySelector('.tx').addEventListener('click', cerrar);
+    else setTimeout(cerrar, 3200);
   }
   function errText(e) {
     const m = String((e && e.message) || e || '');

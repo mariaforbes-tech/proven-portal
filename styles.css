@@ -363,7 +363,16 @@ main{max-width:var(--max);margin:0 auto;padding:18px 16px 70px;width:100%;flex:1
 .toast{position:fixed;left:50%;bottom:22px;transform:translate(-50%,22px);background:var(--navy);color:#fff;padding:12px 20px;border-radius:99px;
   font-size:.9rem;font-weight:600;opacity:0;transition:.3s;z-index:90;box-shadow:0 12px 30px -8px rgba(0,0,0,.5);max-width:90vw;text-align:center}
 .toast.show{opacity:1;transform:translate(-50%,0)}
-.toast.bad{background:var(--bad)}
+/* El error se queda hasta que lo cierres, asi que deja de ser una
+   pildora de una linea: tiene que caber un mensaje largo y poder
+   seleccionarse para copiarlo. */
+.toast.bad{background:var(--bad);border-radius:14px;text-align:left;
+  display:flex;align-items:flex-start;gap:10px;padding:14px 14px 14px 18px;
+  max-width:min(560px,92vw);line-height:1.45;font-weight:500;
+  user-select:text;-webkit-user-select:text}
+.toast.bad .tx{background:none;border:0;color:#fff;font-size:22px;line-height:1;
+  cursor:pointer;padding:0 2px;opacity:.85;flex:none}
+.toast.bad .tx:hover{opacity:1}
 .payform{margin-bottom:16px}
 
 @media (min-width:700px){
