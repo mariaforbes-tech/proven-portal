@@ -1249,7 +1249,9 @@
           }).then(function (row) {
             return sincronizar(pr, row && row.id).then(function () { return { pr: pr, row: row }; });
           }).then(function (x) {
-            toast(nombreTipo(kind) + ' ' + num + ' guardado.');
+            toast(x.row && x.row.yaEstaba
+              ? nombreTipo(kind) + ' ' + num + ' ya estaba guardado. Terminé lo que faltaba.'
+              : nombreTipo(kind) + ' ' + num + ' guardado.');
             /* De un estimado sigue el invoice, que es lo que ella iba a
                hacer de todos modos. De los demás no sigue nada: el
                documento ya existía, esto era meterlo al portal. */
@@ -1283,40 +1285,55 @@
      antes de que quede guardado. Sin esta puerta, cada uno de esos casos
      obliga a rehacer a mano un trabajo que ya estaba hecho. */
   function subirDoc(pr, x) {
-    return keepFile(pr, x.kind, x.num, x.file).then(function (path) {
-      return D.save({
-        kind: x.kind, number: x.num, project_id: pr.id,
-        status: 'issued',
-        /* La fecha del documento, no la de hoy: si se emitió el martes,
-           en la cuenta del cliente tiene que seguir siendo del martes. */
-        issued_on: fechaValida(x.fecha) || P.dkey(new Date()),
-        due_on: fechaValida(x.vence),
-        total: x.total == null ? null : x.total,
-        body: {
-          externo: true, archivo: x.file.name, titulo: x.titulo || '',
-          bill: { name: x.cliente || '', address: x.direccion || '' },
-          leido: x.renglones || []
-        },
-        pdf_path: path
-      });
-    }).then(function (row) {
-      /* Un invoice es plata que el cliente debe, venga de donde venga. */
-      if (x.kind !== 'invoice') return row;
-      return Promise.resolve(P.API.saveClientPayment({
-        project_id: pr.id, label: 'Invoice ' + x.num,
-        amount: Number(x.total) || 0, due_on: fechaValida(x.vence),
-        sort: Date.now() % 100000
-      })).then(function () { return row; })
-        .catch(function (e) {
-          toast('El invoice quedó guardado, pero no pude crear el cobro: ' + P.errText(e), true);
-          return row;
+    /* Antes, reintentar después de un fallo chocaba con el número y la
+       dejaba sin salida: "ya existe" y a inventarse otro número. Pero
+       "ya existe" casi siempre significa que el primer intento SÍ llegó
+       a la base y lo que falló fue lo de después. Entonces no es un
+       error: es que no hay nada que guardar, solo que terminar. */
+    return Promise.resolve(D.findDoc(x.kind, x.num).catch(function () { return null; }))
+      .then(function (ya) {
+        if (ya) {
+          if (ya.project_id && ya.project_id !== pr.id) {
+            throw new Error('El ' + nombreTipo(x.kind).toLowerCase() + ' ' + x.num
+              + ' ya está guardado, pero en otro proyecto. Revísalo antes de volver a subirlo.');
+          }
+          /* Un documento emitido no se edita, así que se devuelve el que
+             ya hay tal cual. El que sigue reintenta archivarlo y poner la
+             hoja al día, que es lo que de verdad quedó a medias. */
+          ya.yaEstaba = true;
+          return ya;
+        }
+        return keepFile(pr, x.kind, x.num, x.file).then(function (path) {
+          return D.save({
+            kind: x.kind, number: x.num, project_id: pr.id,
+            status: 'issued',
+            /* La fecha del documento, no la de hoy: si se emitió el
+               martes, en la cuenta del cliente sigue siendo del martes. */
+            issued_on: fechaValida(x.fecha) || P.dkey(new Date()),
+            due_on: fechaValida(x.vence),
+            total: x.total == null ? null : x.total,
+            body: {
+              externo: true, archivo: x.file.name, titulo: x.titulo || '',
+              bill: { name: x.cliente || '', address: x.direccion || '' },
+              leido: x.renglones || []
+            },
+            pdf_path: path
+          });
+        }).then(function (row) {
+          /* Un invoice es plata que el cliente debe, venga de donde venga.
+             Solo al crearlo: reintentar no puede cobrar dos veces. */
+          if (x.kind !== 'invoice') return row;
+          return Promise.resolve(P.API.saveClientPayment({
+            project_id: pr.id, label: 'Invoice ' + x.num,
+            amount: Number(x.total) || 0, due_on: fechaValida(x.vence),
+            sort: Date.now() % 100000
+          })).then(function () { return row; })
+            .catch(function (e) {
+              toast('El invoice quedó guardado, pero no pude crear el cobro: ' + P.errText(e), true);
+              return row;
+            });
         });
-    }).catch(function (e) {
-      var t2 = P.errText(e);
-      /* El choque de número es el error que de verdad va a pasar. */
-      throw new Error(/duplicate|unique/i.test(t2)
-        ? 'Ya hay un ' + nombreTipo(x.kind).toLowerCase() + ' con el número ' + x.num + '.' : t2);
-    });
+      });
   }
 
   function fechaValida(s) {
@@ -1932,6 +1949,8 @@
      Lo que no esté en la tabla sale tal cual: el nombre de un proyecto o
      de un cliente nunca se toca. */
   var EN = {
+    " ya estaba guardado. Terminé lo que faltaba.": " was already saved. I finished what was missing.",
+    " ya está guardado, pero en otro proyecto. Revísalo antes de volver a subirlo.": " is already saved, but under another project. Check it before uploading again.",
     "Súbeme el PDF y yo saco de ahí el resto. Sirve para un estimado, un invoice, un contrato, un change order o un recibo.": "Send me the PDF and I'll pull the rest out of it. Works for an estimate, an invoice, a contract, a change order or a receipt.",
     "Revísalo antes de guardarlo. Si algo se leyó mal, córrigelo encima.": "Check it before saving. If something was read wrong, type over it.",
     "Un PDF que ya existe. Lo leo y lo registro.": "A PDF that already exists. I read it and file it.",
@@ -2359,6 +2378,13 @@
         .order('created_at', { ascending: false }));
     },
     doc: function (id) { return q(sb.from('documents').select('*').eq('id', id).single()); },
+    /* Si ya hay uno con ese número. Sirve para distinguir "esto ya estaba
+       guardado" de "hay un choque de verdad", que para quien lo usa son
+       dos cosas muy distintas aunque la base las cuente igual. */
+    findDoc: function (kind, number) {
+      return q(sb.from('documents').select('id,project_id,total,status')
+        .eq('kind', kind).eq('number', number).maybeSingle());
+    },
     voidDoc: function (id) { return q(sb.from('documents').update({ status: 'void' }).eq('id', id)); },
     leads: function () {
       return q(sb.from('funnel_leads').select('*').order('updated_at', { ascending: false }).limit(500));
@@ -2584,13 +2610,16 @@
     var box = h('div', { class: 'list' });
     var find = h('input', { type: 'search', placeholder: 'Buscar por proyecto, cliente o dirección…' });
 
-    /* Dos cosas que faltaban justo aquí, que es donde se piensan.
-       Si el trabajo es nuevo el proyecto no existe todavía, y mandarla a
+    /* Si el trabajo es nuevo el proyecto no existe todavía, y mandarla a
        la pestaña de Projects a crearlo y volver la saca del camino a
-       mitad de una tarea. Y si el estimado se hizo por fuera, este es el
-       momento en que uno se acuerda de que hay que subirlo. */
-    var sube = h('button', { class: 'btn ghost sm', type: 'button' }, 'Subir un estimado');
-    sube.onclick = function () { estimateAutoFlow(main, ctx); };
+       mitad de una tarea. Por eso se puede crear desde aquí.
+
+       Aquí hubo también un botón de subir un documento, y fue un error:
+       secuestraba el flujo. Alguien entraba a hacer un contrato, lo veía,
+       lo tocaba, y terminaba con un estimado registrado y en la pantalla
+       de invoice sin haber hecho el contrato. Una pantalla que pregunta
+       "¿para qué proyecto?" solo debe responder esa pregunta. Subir un
+       documento tiene su propia tarjeta en el menú de Nelly. */
     var nuevo = h('button', { class: 'btn ghost sm', type: 'button' }, ico('plus', 15), 'Nuevo proyecto');
     nuevo.onclick = function () { nuevoProyecto(ctx, elegido); };
 
@@ -2617,7 +2646,7 @@
       h('div', { class: 'sech' }, h('h2', null, title), backBtn()),
       robot('¿Para qué proyecto?', 'saludo'),
       h('div', { class: 'mb' }, find),
-      h('div', { class: 'acts' }, nuevo, sube),
+      h('div', { class: 'acts' }, nuevo),
       box);
   }
 
