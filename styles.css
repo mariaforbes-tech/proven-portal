@@ -227,6 +227,25 @@ main{max-width:var(--max);margin:0 auto;padding:18px 16px 70px;width:100%;flex:1
 .rit{display:flex;gap:11px;align-items:flex-start}
 .lbimg{max-height:76vh;width:auto;margin:0 auto;border-radius:9px}
 
+/* Comparar opciones lado a lado. Es la misma vista que ve el cliente:
+   dos renders de la misma cocina solo se distinguen uno junto al otro.
+   La foto se abre completa al tocarla. */
+.cmpcols{display:flex;gap:11px;overflow:auto;align-items:stretch;padding-bottom:4px}
+.cmpcol{flex:1 1 0;min-width:46%;display:flex;flex-direction:column;gap:8px;
+  border:1px solid var(--hair);border-radius:12px;padding:8px;background:#fff}
+.cmpcol.on{border-color:var(--gold);box-shadow:0 0 0 2px rgba(201,168,76,.22)}
+.cmpimg{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:9px;
+  cursor:zoom-in;background:#EEF1F6}
+.cmptx{display:grid;gap:5px;align-content:start}
+.cmptx b{font-size:.92rem;line-height:1.25}
+.cmptx small{color:var(--mut);font-size:.8rem;line-height:1.35}
+.cmptx .oextra{color:#B3261E;font-weight:700;font-size:.9rem}
+.cmptx .oprice b{font-size:1rem}
+@media (min-width:700px){
+  .cmpcol{min-width:0}
+  .cmpimg{aspect-ratio:3/2}
+}
+
 /* ---------- reloj ---------- */
 .clock{margin-bottom:15px;padding:0;overflow:hidden}
 .ck{display:grid;gap:12px;padding:15px}

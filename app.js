@@ -1008,11 +1008,39 @@
         h('button', { class: 'ib', type: 'button', 'aria-label': t('edit'),
           onclick: () => form(o) }, ico('edit', 15)));
 
+      /* Comparar lado a lado. Dos renders de la misma cocina solo se
+         distinguen poniendolos uno junto al otro: en la lista van uno
+         debajo del otro y la diferencia se pierde al hacer scroll. Es la
+         misma vista que ve el cliente, para revisarla antes de mandarsela. */
+      const conFoto = list.filter((o) => o.photo_path && urls[o.photo_path]);
+
+      function compare() {
+        const col = (o) => h('div', { class: 'cmpcol' + (sel.chosen_option_id === o.id ? ' on' : '') },
+          h('img', { class: 'cmpimg', src: safeUrl(urls[o.photo_path]), alt: L(o, 'title'),
+            loading: 'lazy', title: t('opts_cmp_sub'),
+            onclick: () => lightbox(urls[o.photo_path], L(o, 'title')) }),
+          h('div', { class: 'cmptx' },
+            h('b', null, L(o, 'title')),
+            o.extra ? h('div', { class: 'oextra' }, o.extra) : null,
+            o.price != null ? h('div', { class: 'oprice' }, h('b', null, money(o.price))) : null,
+            o.note ? h('small', null, o.note) : null,
+            sel.chosen_option_id === o.id ? chip(t('opts_chosen'), 'ok') : null));
+
+        modal(t('opts_cmp') + ' · ' + L(sel, 'title'),
+          h('div', { class: 'mb' },
+            h('p', { class: 'mut sm' }, t('opts_cmp_sub')),
+            h('div', { class: 'cmpcols' }, conFoto.map(col))),
+          { wide: true });
+      }
+
       fill(body,
         h('p', { class: 'mut sm' }, t('opts_p')),
         list.length ? h('div', { class: 'optlist' }, list.map(row)) : empty(t('opts_none')),
-        h('div', { class: 'acts' }, h('button', { class: 'btn', type: 'button',
-          onclick: () => form(null) }, ico('plus', 16), t('opts_add'))));
+        h('div', { class: 'acts' },
+          h('button', { class: 'btn', type: 'button',
+            onclick: () => form(null) }, ico('plus', 16), t('opts_add')),
+          conFoto.length > 1 ? h('button', { class: 'btn ghost', type: 'button',
+            onclick: compare }, t('opts_cmp')) : null));
     }
 
     function form(o) {
