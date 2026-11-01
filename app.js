@@ -1026,11 +1026,14 @@
             o.note ? h('small', null, o.note) : null,
             sel.chosen_option_id === o.id ? chip(t('opts_chosen'), 'ok') : null));
 
-        modal(t('opts_cmp') + ' · ' + L(sel, 'title'),
+        const mc = modal(t('opts_cmp') + ' · ' + L(sel, 'title'),
           h('div', { class: 'mb' },
             h('p', { class: 'mut sm' }, t('opts_cmp_sub')),
             h('div', { class: 'cmpcols' }, conFoto.map(col))),
           { wide: true });
+        /* Comparar necesita mas ancho que un formulario: si las dos fotos
+           salen pequenas, el comparador no compara nada. */
+        mc.box.classList.add('cmpm');
       }
 
       fill(body,
