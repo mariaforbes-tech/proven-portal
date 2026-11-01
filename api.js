@@ -184,11 +184,29 @@
           row.photo_path = path;
         }
         delete row.project_id;
-        if (row.id) return q(sb.from('selection_options').update(row).eq('id', row.id));
-        /* La tabla no genera el id sola, asi que lo ponemos aqui. Sin esto
-           la base rechaza la fila: 'null value in column id'. */
-        row.id = (self.crypto && crypto.randomUUID) ? crypto.randomUUID() : uid();
-        return q(sb.from('selection_options').insert(row));
+        if (!row.id) {
+          /* La tabla no genera el id sola, asi que lo ponemos aqui. Sin esto
+             la base rechaza la fila: 'null value in column id'. */
+          row.id = (self.crypto && crypto.randomUUID) ? crypto.randomUUID() : uid();
+        }
+        /* 'reference' es una columna nueva. Si la base todavia no la tiene,
+           guardamos sin ella en vez de perder el trabajo: el portal sigue
+           sirviendo igual y la casilla empieza a valer cuando se agregue la
+           columna. Sin esto, un portal nuevo contra una base vieja no deja
+           guardar NINGUNA opcion, ni marcada ni sin marcar. */
+        const falta = (e) => {
+          const m = ((e && (e.message || e.msg)) || '') + ' ' + ((e && e.code) || '');
+          return /reference/i.test(m) && /(column|schema cache|PGRST204)/i.test(m);
+        };
+        const go = (r) => (r.id && o.id)
+          ? q(sb.from('selection_options').update(r).eq('id', r.id))
+          : q(sb.from('selection_options').insert(r));
+        try { return await go(row); }
+        catch (e) {
+          if (!falta(e)) throw e;
+          const sin = { ...row }; delete sin.reference;
+          return go(sin);
+        }
       },
       deleteOption: (id) => q(sb.from('selection_options').delete().eq('id', id)),
 
