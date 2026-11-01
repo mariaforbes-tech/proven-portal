@@ -1004,6 +1004,7 @@
           o.link ? h('a', { class: 'lnk sm', href: safeUrl(o.link), target: '_blank',
             rel: 'noopener noreferrer' }, t('opts_open')) : null,
           o.from_client ? chip(t('opts_fromclient'), 'gold') : null,
+          o.reference ? chip(t('opts_ref'), 'mut') : null,
           sel.chosen_option_id === o.id ? chip(t('opts_chosen'), 'ok') : null),
         h('button', { class: 'ib', type: 'button', 'aria-label': t('edit'),
           onclick: () => form(o) }, ico('edit', 15)));
@@ -1024,6 +1025,7 @@
             o.extra ? h('div', { class: 'oextra' }, o.extra) : null,
             o.price != null ? h('div', { class: 'oprice' }, h('b', null, money(o.price))) : null,
             o.note ? h('small', null, o.note) : null,
+            o.reference ? chip(t('opts_ref'), 'mut') : null,
             sel.chosen_option_id === o.id ? chip(t('opts_chosen'), 'ok') : null));
 
         const mc = modal(t('opts_cmp') + ' · ' + L(sel, 'title'),
@@ -1056,6 +1058,14 @@
         price: h('input', { type: 'number', step: '0.01', min: '0', inputmode: 'decimal',
           value: o && o.price != null ? o.price : '' }),
         photo: h('input', { type: 'file', accept: 'image/*' }),
+        /* Una foto de referencia -el antes, un detalle en primer plano- se
+           muestra junto a las opciones pero no se puede escoger: el cliente
+           no esta decidiendo entre "como esta hoy" y una opcion real. */
+        reference: h('input', { type: 'checkbox', checked: !!(o && o.reference) }),
+        /* El orden importa: el antes va de primero y un detalle va despues
+           de la opcion que ilustra. Numero mas bajo, mas arriba. */
+        sort: h('input', { type: 'number', step: '1', inputmode: 'numeric',
+          value: o && o.sort != null ? o.sort : '', placeholder: t('opts_sort_ph') }),
       };
       const save = h('button', { class: 'btn', type: 'submit' }, t('save'));
       const m2 = modal(o ? t('opts_edit') : t('opts_add'),
@@ -1066,7 +1076,8 @@
             note: f.note.value.trim(), link: f.link.value.trim(),
             extra: f.extra.value.trim(),
             price: f.price.value === '' ? null : Number(f.price.value),
-            sort: o ? o.sort : Date.now() % 100000,
+            reference: !!f.reference.checked,
+            sort: f.sort.value === '' ? (o ? o.sort : Date.now() % 100000) : Number(f.sort.value),
           }, f.photo.files && f.photo.files[0]);
           m2.close(); toast(t('saved')); draw(); done();
         }); } },
@@ -1074,8 +1085,10 @@
           field(t('opts_en'), f.title_en),
           h('div', { class: 'two' }, field(t('opts_note'), f.note), field(t('opts_price') + ' ($)', f.price)),
           field(t('opts_extra'), f.extra),
-          field(t('opts_link'), f.link),
+          h('div', { class: 'two' }, field(t('opts_link'), f.link), field(t('opts_sort'), f.sort)),
           field(t('opts_photo'), f.photo),
+          h('label', { class: 'chk' }, f.reference,
+            h('span', null, h('b', null, t('opts_ref')), h('small', null, t('opts_ref_sub')))),
           h('div', { class: 'acts' },
             o ? h('button', { class: 'btn ghost danger-t', type: 'button', onclick: async () => {
               if (await askConfirm(t('opts_del_q'))) { await API.deleteOption(o.id); m2.close(); draw(); done(); }
