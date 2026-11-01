@@ -185,6 +185,9 @@
         }
         delete row.project_id;
         if (row.id) return q(sb.from('selection_options').update(row).eq('id', row.id));
+        /* La tabla no genera el id sola, asi que lo ponemos aqui. Sin esto
+           la base rechaza la fila: 'null value in column id'. */
+        row.id = (self.crypto && crypto.randomUUID) ? crypto.randomUUID() : uid();
         return q(sb.from('selection_options').insert(row));
       },
       deleteOption: (id) => q(sb.from('selection_options').delete().eq('id', id)),
