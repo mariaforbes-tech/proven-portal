@@ -63,6 +63,19 @@
       profiles: () => q(sb.from('profiles').select('*').order('created_at', { ascending: false })),
       updateProfile: (id, patch) => q(sb.from('profiles').update(patch).eq('id', id)),
       deleteProfile: (id) => q(sb.from('profiles').delete().eq('id', id)),
+      /* Un ayudante por dia no tiene correo ni entra al portal, pero igual
+         hay que apuntarle las horas. Esta ficha no es una cuenta: nace
+         aprobada, sin permisos y sin forma de entrar. */
+      createOffline(o) {
+        const row = {
+          id: (self.crypto && crypto.randomUUID) ? crypto.randomUUID() : uid(),
+          full_name: o.full_name, phone: o.phone || '', email: '',
+          grp: o.grp === 'crew' ? 'crew' : 'gigs',
+          status: 'approved', no_login: true,
+          perms: { projects: false, clock: false, shifts: false, docs: false, pay: false },
+        };
+        return q(sb.from('profiles').insert(row));
+      },
       async groupDefaults() { const r = await q(sb.from('group_defaults').select('*')); const o = {}; r.forEach((x) => (o[x.grp] = x.perms)); return o; },
       saveDefaults: (grp, perms) => q(sb.from('group_defaults').upsert({ grp, perms })),
 

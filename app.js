@@ -1536,6 +1536,27 @@
       h('div', { class: 'acts' }, save)));
   }
 
+  /* Un ayudante por día no tiene correo y no va a registrarse en nada, pero
+     sus horas sí hay que apuntarlas. Esto crea la ficha a mano: queda en la
+     lista de Horas y en los equipos de obra, sin cuenta ni acceso. */
+  function offlinePersonEditor(done) {
+    const f = {
+      full_name: h('input', { required: true }),
+      phone: h('input', { type: 'tel' }),
+      grp: h('select', null, ['gigs', 'crew'].map((g) => h('option', { value: g }, t('grp_short_' + g)))),
+    };
+    const save = h('button', { class: 'btn', type: 'submit' }, t('save'));
+    const m = modal(t('add_offline'), h('form', { class: 'mb frm', onsubmit: (e) => { e.preventDefault(); run(save, async () => {
+      await API.createOffline({ full_name: f.full_name.value.trim(), phone: f.phone.value.trim(), grp: f.grp.value });
+      m.close(); toast(t('saved')); done();
+    }); } },
+      h('p', { class: 'mut small' }, t('offline_hint')),
+      field(t('full_name'), f.full_name),
+      field(t('phone'), f.phone),
+      field(t('group'), f.grp),
+      h('div', { class: 'acts' }, save)));
+  }
+
   /* ============================ CENTRO DE MANDO (admin) ============================ */
   const MODS = ['projects', 'clock', 'shifts', 'docs', 'pay', 'content', 'nelly'];
   async function viewCmd(main) {
@@ -1563,7 +1584,7 @@
     const rows = team.map((p) => {
       const setPerm = (k, v) => { const perms = Object.assign({}, p.perms); perms[k] = v; p.perms = perms; return API.updateProfile(p.id, { perms }).catch((e) => { toast(errText(e), true); refresh(); }); };
       return h('div', Object.assign({ class: 'mx row' + (p.status === 'disabled' ? ' off' : '') }, mxc),
-        h('span', { class: 'c0' }, h('span', { class: 'av sm' }, ini(p.full_name)), h('span', null, h('b', null, p.full_name), h('small', null, t('grp_short_' + p.grp) + (p.phone ? ' · ' + p.phone : '')))),
+        h('span', { class: 'c0' }, h('span', { class: 'av sm' }, ini(p.full_name)), h('span', null, h('b', null, p.full_name, p.no_login ? [' ', chip(t('no_account'), 'mut')] : null), h('small', null, t('grp_short_' + p.grp) + (p.phone ? ' · ' + p.phone : '')))),
         h('span', { 'data-l': t('active') }, switchEl(p.status === 'approved', (v) => API.updateProfile(p.id, { status: v ? 'approved' : 'disabled' }).then(refresh).catch((e) => { toast(errText(e), true); refresh(); }), t('active') + ' ' + p.full_name)),
         MODS.map((k) => h('span', { 'data-l': t('mod_' + k) }, switchEl(p.perms && p.perms[k], (v) => setPerm(k, v), t('mod_' + k) + ' ' + p.full_name))),
         h('span', { 'data-l': t('office') }, switchEl(p.is_office, (v) => API.updateProfile(p.id, { is_office: v }).then(refresh).catch((e) => { toast(errText(e), true); refresh(); }), t('office') + ' ' + p.full_name)),
@@ -1593,7 +1614,9 @@
 
     fill(main, secH(t('tab_cmd')), stats,
       h('h3', { class: 'sub' }, t('requests'), ' ', chip(String(pending.length), pending.length ? 'warn' : 'mut')), reqBox,
-      h('h3', { class: 'sub' }, t('access_matrix')), h('p', { class: 'mut small' }, t('matrix_hint')),
+      h('h3', { class: 'sub' }, t('access_matrix'), ' ',
+        h('button', { class: 'btn ghost sm', type: 'button', onclick: () => offlinePersonEditor(refresh) }, ico('plus', 16), t('add_offline'))),
+      h('p', { class: 'mut small' }, t('matrix_hint')),
       team.length ? h('div', { class: 'card matrix' }, head, rows) : empty(t('no_team_yet')),
       clients.length ? h('h3', { class: 'sub' }, t('cl_h'), ' ', chip(String(clients.length), 'gold')) : null,
       clients.length ? h('p', { class: 'mut small' }, t('cl_hint')) : null,
