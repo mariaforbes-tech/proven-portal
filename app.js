@@ -886,11 +886,17 @@
     function tarjeta(f) {
       const u = urls[f.file_path];
       const esImg = /\.(png|jpe?g|webp|gif|heic)$/i.test(f.file_name || '') || /image/.test(f.file_name || '');
-      const ver = u ? h('a', { class: 'lnk', href: u, target: '_blank', rel: 'noopener noreferrer' }, t('pf_open')) : null;
-      const sw = switchEl(f.for_client, async (v) => {
-        try { await API.updatePlanFile(f.id, { for_client: v }); f.for_client = v; toast(t('saved')); }
-        catch (e) { toast(errText(e), true); }
-      }, t('pf_client'));
+      /* "Abrir" sobraba: la foto misma ya abre en grande. Lo que faltaba
+         era el nombre del interruptor, que es el unico que decide algo. */
+      const ver = (!esImg && u)
+        ? h('a', { class: 'lnk', href: u, target: '_blank', rel: 'noopener noreferrer' }, t('pf_open'))
+        : null;
+      const sw = h('label', { class: 'row gap' },
+        switchEl(f.for_client, async (v) => {
+          try { await API.updatePlanFile(f.id, { for_client: v }); f.for_client = v; toast(t('saved')); }
+          catch (e) { toast(errText(e), true); }
+        }, t('pf_client')),
+        h('small', { class: 'mut' }, t('pf_client')));
       const del = h('button', { class: 'ib', type: 'button', 'aria-label': t('delete'),
         onclick: async () => {
           if (!(await askConfirm(t('pf_del_q'), t('delete')))) return;
