@@ -854,15 +854,23 @@
     let urls = {};
     try { urls = paths.length ? await API.urls(paths) : {}; } catch (e) { urls = {}; }
 
+    /* La fecha de la foto no es la de subida: las fotos de obra se suben en
+       la noche, o dos dias despues. Este campo manda sobre created_at y es
+       con el que se agrupan las de "Durante". Viene en hoy, que es el caso
+       normal, y solo se toca cuando se sube algo atrasado. */
+    const hoyISO = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
+    const fecha = h('input', { type: 'date', value: hoyISO(), 'aria-label': t('pf_date') });
+
     const subir = (kind) => {
-      const inp = h('input', { type: 'file', accept: 'image/*,application/pdf', multiple: true, hidden: true });
+      const inp = h('input', { type: 'file', accept: 'image/*,video/*,application/pdf', multiple: true, hidden: true });
       inp.onchange = async () => {
         const list = [...(inp.files || [])];
         if (!list.length) return;
         toast(t('pf_sending'));
         try {
           for (const file of list) {
-            await API.savePlanFile({ project_id: p.id, kind, file, for_client: kind === 'before' });
+            await API.savePlanFile({ project_id: p.id, kind, file, for_client: kind === 'before',
+              taken_on: fecha.value || null });
           }
           toast(t2('saved')); viewProject(document.getElementById('main'), p.id);
         } catch (e) { toast(errText(e), true); }
@@ -872,7 +880,8 @@
 
     const cabeza = h('div', { class: 'row gap wrap mb' },
       PF_KINDS.map((k) => h('button', { class: 'btn ghost sm', type: 'button',
-        onclick: () => subir(k) }, ico('plus', 15), t('pf_' + k))));
+        onclick: () => subir(k) }, ico('plus', 15), t('pf_' + k))),
+      h('label', { class: 'row gap' }, h('small', { class: 'mut' }, t('pf_date')), fecha));
 
     function tarjeta(f) {
       const u = urls[f.file_path];
@@ -894,16 +903,35 @@
           : h('div', { class: 'pfdoc' }, ico('file', 26)),
         h('div', { class: 'pfb' },
           h('b', null, f.title || f.file_name || t('pf_' + f.kind)),
-          h('small', null, t('pf_' + f.kind) + ' · ' + fDate(f.created_at, { month: 'short', day: 'numeric' })),
+          h('small', null, t('pf_' + f.kind) + ' · ' + (f.taken_on
+            ? fDate(f.taken_on + 'T12:00:00', { month: 'short', day: 'numeric' })
+            : fDate(f.created_at, { month: 'short', day: 'numeric' }))),
           h('div', { class: 'row gap' }, ver, sw, del)));
     }
+
+    const dia = (f) => f.taken_on || String(f.created_at || '').slice(0, 10);
 
     const grupos = PF_KINDS.map((k) => {
       const mios = files.filter((f) => f.kind === k);
       if (!mios.length) return null;
+      /* "Durante" se parte por dia: la obra es una secuencia, y verla
+         revuelta no dice nada. Las demas son un monton, no una linea
+         de tiempo, y no ganan nada con el corte. */
+      if (k !== 'during') {
+        return h('section', { class: 'mb' },
+          h('h3', null, t('pf_' + k)),
+          h('div', { class: 'pfgrid' }, mios.map(tarjeta)));
+      }
+      const dias = {};
+      mios.forEach((f) => { const d = dia(f); (dias[d] = dias[d] || []).push(f); });
+      const orden = Object.keys(dias).sort().reverse();
       return h('section', { class: 'mb' },
         h('h3', null, t('pf_' + k)),
-        h('div', { class: 'pfgrid' }, mios.map(tarjeta)));
+        orden.map((d) => h('div', { class: 'mb' },
+          h('h4', { class: 'sub' }, d
+            ? fDate(d + 'T12:00:00', { weekday: 'short', month: 'short', day: 'numeric' })
+            : '—'),
+          h('div', { class: 'pfgrid' }, dias[d].map(tarjeta)))));
     }).filter(Boolean);
 
     fill(box, cabeza,

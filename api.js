@@ -235,10 +235,23 @@
         const path = f.project_id + '/plans/' + uid() + '-' + safeName(file.name || 'archivo');
         const { error } = await sb.storage.from('project-files').upload(path, file, { contentType: file.type });
         if (error) throw error;
-        return q(sb.from('project_files').insert({
+        const row = {
           project_id: f.project_id, kind: f.kind, title: f.title || '',
           file_path: path, file_name: file.name || '', for_client: !!f.for_client
-        }));
+        };
+        if (f.taken_on) row.taken_on = f.taken_on;
+        /* Si todavia no se corrio el SQL de la fecha, la columna no existe.
+           Mejor que la foto entre sin fecha a que no entre. */
+        const faltaFecha = (e) => {
+          const m = ((e && (e.message || e.msg)) || '') + ' ' + ((e && e.code) || '');
+          return /taken_on/i.test(m) && /(column|schema cache|PGRST204)/i.test(m);
+        };
+        try { return await q(sb.from('project_files').insert(row)); }
+        catch (e) {
+          if (!faltaFecha(e)) throw e;
+          const sin = { ...row }; delete sin.taken_on;
+          return q(sb.from('project_files').insert(sin));
+        }
       },
       updatePlanFile: (id, patch) => q(sb.from('project_files').update(patch).eq('id', id)),
       deletePlanFile: (id) => q(sb.from('project_files').delete().eq('id', id)),
