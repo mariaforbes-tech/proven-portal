@@ -209,7 +209,7 @@
            guardar NINGUNA opcion, ni marcada ni sin marcar. */
         const falta = (e) => {
           const m = ((e && (e.message || e.msg)) || '') + ' ' + ((e && e.code) || '');
-          return /reference/i.test(m) && /(column|schema cache|PGRST204)/i.test(m);
+          return /reference|palette/i.test(m) && /(column|schema cache|PGRST204)/i.test(m);
         };
         const go = (r) => (r.id && o.id)
           ? q(sb.from('selection_options').update(r).eq('id', r.id))
@@ -217,7 +217,7 @@
         try { return await go(row); }
         catch (e) {
           if (!falta(e)) throw e;
-          const sin = { ...row }; delete sin.reference;
+          const sin = { ...row }; delete sin.reference; delete sin.palette;
           return go(sin);
         }
       },

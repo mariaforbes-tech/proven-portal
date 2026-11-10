@@ -1088,6 +1088,16 @@
         title_en: h('input', { value: o ? o.title_en : '', placeholder: t('opts_en_ph') }),
         note: h('input', { value: o ? o.note : '', placeholder: t('opts_note_ph') }),
         extra: h('input', { value: o ? o.extra : '', placeholder: t('opts_extra_ph') }),
+        /* Una carta de color no cabe aqui como opciones una por una. Si la
+           opcion es un cuarto, esto le dice al portal del cliente cual
+           carta abrirle encima para que escoja su color adentro. */
+        palette: (function () {
+          const s = h('select', null,
+            h('option', { value: '' }, t('opts_pal_no')),
+            h('option', { value: 'behr-light' }, t('opts_pal_behr')));
+          s.value = (o && o.palette) || '';
+          return s;
+        }()),
         link: h('input', { type: 'url', value: o ? o.link : '', placeholder: 'https://…' }),
         price: h('input', { type: 'number', step: '0.01', min: '0', inputmode: 'decimal',
           value: o && o.price != null ? o.price : '' }),
@@ -1109,6 +1119,7 @@
             title: f.title.value.trim(), title_en: f.title_en.value.trim(),
             note: f.note.value.trim(), link: f.link.value.trim(),
             extra: f.extra.value.trim(),
+            palette: f.palette.value,
             price: f.price.value === '' ? null : Number(f.price.value),
             reference: !!f.reference.checked,
             sort: f.sort.value === '' ? (o ? o.sort : Date.now() % 100000) : Number(f.sort.value),
@@ -1119,6 +1130,7 @@
           field(t('opts_en'), f.title_en),
           h('div', { class: 'two' }, field(t('opts_note'), f.note), field(t('opts_price') + ' ($)', f.price)),
           field(t('opts_extra'), f.extra),
+          field(t('opts_pal'), f.palette),
           h('div', { class: 'two' }, field(t('opts_link'), f.link), field(t('opts_sort'), f.sort)),
           field(t('opts_photo'), f.photo),
           h('label', { class: 'chk' }, f.reference,
