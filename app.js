@@ -1094,7 +1094,9 @@
         palette: (function () {
           const s = h('select', null,
             h('option', { value: '' }, t('opts_pal_no')),
-            h('option', { value: 'behr-light' }, t('opts_pal_behr')));
+            h('option', { value: 'behr-light' }, t('opts_pal_behr')),
+            h('option', { value: 'app-white' }, t('opts_pal_appw')),
+            h('option', { value: 'app-ss' }, t('opts_pal_apps')));
           s.value = (o && o.palette) || '';
           return s;
         }()),
