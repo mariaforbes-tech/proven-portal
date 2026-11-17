@@ -27,9 +27,10 @@ function renderHistory(){
  const names=Array.isArray(h.crew)?h.crew:[];
  for(const name of names){
   const line=text('div',name+' ');
-  const person=workers.find(w=>w.full_name.toLowerCase().trim()===String(name).toLowerCase().trim());
+  const norm=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();const person=workers.find(w=>norm(w.full_name)===norm(name));
   if(person){
-   const b=text('button','Preparar jornada');b.style.margin='4px 0 8px 12px';
+   const existing=shifts.some(s=>s.project_id===h.project_id&&s.worker_id===person.id&&s.work_date===h.work_date);
+   const b=text('button',existing?'Jornada ya registrada':'Preparar jornada');b.disabled=existing;b.style.margin='4px 0 8px 12px';
    b.onclick=()=>{
     $('project').value=h.project_id;$('worker').value=person.id;$('date').value=h.work_date;
     $('description').value=h.activity;syncShiftRate();$('units').value='1';
