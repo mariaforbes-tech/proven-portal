@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Bitácora diaria · Proven</title>
+<style>body{font:15px/1.5 system-ui,sans-serif;background:#f5f6f8;color:#142341;margin:0}header{background:#0d1b3e;color:white;padding:20px}main{max-width:1000px;margin:auto;padding:20px}a{color:#b18b2f}.card{background:white;border:1px solid #ddd;border-radius:12px;padding:16px;margin:12px 0}small{color:#5b6470}.date{font-weight:800;color:#0d1b3e}button{background:#0d1b3e;color:white;padding:10px 16px;border:0;border-radius:8px}textarea,input,select{width:100%;box-sizing:border-box;padding:9px;margin:4px 0 12px;border:1px solid #bbc1cc;border-radius:7px;font:inherit}label{font-weight:600}.warn{color:#9c3628}#form{display:none}ul{padding-left:20px}li{margin:3px 0}</style></head><body>
+<header><strong>PROVEN SOLUTIONS · Bitácora diaria</strong></header><main><p><a href="./">← Portal del equipo</a></p><p id="status">Comprobando sesión…</p><section id="form"><h2>Registrar / actualizar día</h2><label>Proyecto<select id="project"></select></label><label>Fecha<input id="date" type="date"></label><label>Trabajo realizado<textarea id="activity" rows="2"></textarea></label><label>Personas o cuadrillas (una por línea)<textarea id="crew" rows="4"></textarea></label><label>Notas<textarea id="notes" rows="2"></textarea></label><button id="save">Guardar bitácora</button><p id="message"></p></section><h2>Historial por fecha</h2><div id="logs"></div></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"></script><script src="config.js"></script>
+<script>
+(async function(){
+const cfg=window.PORTAL_CONFIG;const sb=window.supabase.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY);
+const $=id=>document.getElementById(id);const status=$('status');
+const {data:{user},error:ue}=await sb.auth.getUser();
+if(ue||!user){status.innerHTML='Inicia sesión primero en <a href="./">el portal</a> y vuelve aquí.';return;}
+const {data:profile,error:pe}=await sb.from('profiles').select('is_admin,is_office,is_finance').eq('id',user.id).single();
+if(pe||!profile||( !profile.is_admin&&!profile.is_office&&!profile.is_finance)){status.textContent='Acceso restringido al personal administrativo.';return;}
+const {data:projects,error:prErr}=await sb.from('projects').select('id,name').order('name');
+if(prErr){status.textContent='No se pudieron leer los proyectos: '+prErr.message;return;}
+for(const p of projects){const opt=document.createElement('option');opt.value=p.id;opt.textContent=p.name;$('project').appendChild(opt);}
+$('form').style.display='block';status.textContent='Sesión verificada · Bitácora operativa (sin datos financieros).';
+function node(tag,txt,cls){const el=document.createElement(tag);if(txt!==undefined)el.textContent=txt;if(cls)el.className=cls;return el;}
+let records=[];
+async function load(){const {data,error}=await sb.from('project_daily_log').select('id,project_id,work_date,activity,crew,notes,status').order('work_date',{ascending:false});if(error){$('logs').textContent='No se pudo cargar: '+error.message;return;}records=data||[];$('logs').replaceChildren();for(const r of records){const c=node('article',undefined,'card');c.append(node('div',r.work_date,'date'),node('strong',(projects.find(p=>p.id===r.project_id)||{}).name||'Proyecto'),node('p',r.activity));const ul=node('ul');for(const name of (Array.isArray(r.crew)?r.crew:[]))ul.appendChild(node('li',name));c.appendChild(ul);if(r.notes)c.appendChild(node('small',r.notes));const b=node('button','Editar');b.style.marginLeft='12px';b.addEventListener('click',()=>{ $('project').value=r.project_id;$('date').value=r.work_date;$('activity').value=r.activity;$('crew').value=(r.crew||[]).join('\n');$('notes').value=r.notes||'';window.scrollTo(0,0);});c.appendChild(b);$('logs').appendChild(c);}if(!records.length)$('logs').textContent='Sin registros.';}
+$('save').addEventListener('click',async()=>{const project_id=$('project').value,work_date=$('date').value,activity=$('activity').value.trim(),crew=$('crew').value.split('\n').map(s=>s.trim()).filter(Boolean),notes=$('notes').value.trim();if(!project_id||!work_date||!activity||!crew.length){$('message').textContent='Completa proyecto, fecha, actividad y personal.';return;}const existing=records.find(r=>r.project_id===project_id&&r.work_date===work_date);const payload={project_id,work_date,activity,crew,notes};const {error}=existing?await sb.from('project_daily_log').update(payload).eq('id',existing.id):await sb.from('project_daily_log').insert(payload);$('message').textContent=error?'Error: '+error.message:'Guardado correctamente.';if(!error)await load();});
+await load();
+})().catch(e=>{document.getElementById('status').textContent='Error: '+e.message;});
+</script></body></html>
