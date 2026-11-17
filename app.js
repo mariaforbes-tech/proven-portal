@@ -285,7 +285,7 @@
       h('div', { class: 'who' }, langToggle(), h('span', { class: 'me' }, h('span', { class: 'av' }, ini(S.me.full_name)), h('span', { class: 'nm' }, S.me.full_name),
         isAdmin() ? chip('Admin', 'gold') : S.me.is_office ? chip(t('office'), 'gold') : null),
       h('button', { class: 'lnk light', type: 'button', onclick: changePw }, t('change_pw')),
-      h('button', { class: 'lnk light', type: 'button', onclick: signOut }, t('logout')))), tabs.length ? nav : null);
+      h('button', { class: 'lnk light', type: 'button', onclick: signOut }, t('logout')))), tabs.length ? nav : null, (isAdmin() || S.me.is_office || S.me.is_finance) ? h('div', { class: 'nav', 'aria-label': 'Herramientas operativas' }, h('a', { href: 'bitacora.html', class: 'lnk light', style: 'padding:10px 14px;display:inline-block' }, 'Bitácora diaria'), h('a', { href: 'nomina.html', class: 'lnk light', style: 'padding:10px 14px;display:inline-block' }, 'Nómina operativa')) : null);
     const frag = h('div', { class: 'shell' }, head, main);
     if (!tabs.length) main.append(empty(t('no_modules'), t('no_modules_sub')));
     else showTab(main);
