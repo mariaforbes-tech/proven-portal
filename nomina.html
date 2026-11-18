@@ -5,6 +5,7 @@ const {data:{user}}=await sb.auth.getUser();if(!user){$('status').innerHTML='Ini
 const {data:me}=await sb.from('profiles').select('is_admin,is_office,is_finance,status').eq('id',user.id).single();if(!me||me.status!=='approved'||!(me.is_admin||me.is_office||me.is_finance)){$('status').textContent='Acceso reservado al equipo administrativo.';return;}
 const load=async(t,columns='*')=>{const {data,error}=await sb.from(t).select(columns);if(error)throw error;return data||[]};
 const [workers,projects]=await Promise.all([load('profiles','id,full_name,grp,status'),load('projects','id,name')]);workers.sort((a,b)=>a.full_name.localeCompare(b.full_name));projects.sort((a,b)=>a.name.localeCompare(b.name));
+if(me.is_finance&&!me.is_admin&&!me.is_office){$('saveRate').disabled=true;$('saveShift').disabled=true;$('rateMsg').textContent='Solo lectura: las tarifas y jornadas las administra Operaciones.';$('shiftMsg').textContent='Solo lectura para Finanzas. Puedes registrar pagos de jornadas verificadas.';}
 const fill=(id,arr)=>{for(const p of arr){const o=document.createElement('option');o.value=p.id;o.textContent=p.full_name||p.name;$(id).append(o)}};
 fill('worker',workers);fill('rateWorker',workers);fill('project',projects);fill('filter',projects);
 let rates=[],shifts=[],payments=[],history=[],expenses=[];
@@ -30,7 +31,7 @@ function renderHistory(){
   const norm=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();const person=workers.find(w=>norm(w.full_name)===norm(name));
   if(person){
    const existing=shifts.some(s=>s.project_id===h.project_id&&s.worker_id===person.id&&s.work_date===h.work_date);
-   const b=text('button',existing?'Jornada ya registrada':'Preparar jornada');b.disabled=existing;b.style.margin='4px 0 8px 12px';
+   const b=text('button',existing?'Jornada ya registrada':'Preparar jornada');b.disabled=existing||(me.is_finance&&!me.is_admin&&!me.is_office);b.style.margin='4px 0 8px 12px';
    b.onclick=()=>{
     $('project').value=h.project_id;$('worker').value=person.id;$('date').value=h.work_date;
     $('description').value=h.activity;syncShiftRate();$('units').value='';
