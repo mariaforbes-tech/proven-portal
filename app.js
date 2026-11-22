@@ -277,7 +277,8 @@
     return ['projects', 'clock', 'shifts', 'docs', 'pay'].filter((k) => can[k]).concat(nel, cont);
   }
   function shell() {
-    const tabs = tabsFor();
+    // Proven GIGs remains dormant until launch; hide its Shifts navigation only.
+    const tabs = tabsFor().filter((tab) => tab !== 'shifts');
     if (!S.tab || tabs.indexOf(S.tab) < 0) S.tab = tabs[0] || null;
     const main = h('main', { id: 'main', tabindex: '-1' });
     const nav = h('nav', { class: 'nav', 'aria-label': 'Main' }, tabs.map((k) => h('button', { type: 'button', 'data-k': k, class: S.tab === k ? 'on' : '', 'aria-current': S.tab === k ? 'page' : null, onclick: () => { S.tab = k; S.projectId = null; S.ptab = 'feed'; render(); } }, t('tab_' + k))));
