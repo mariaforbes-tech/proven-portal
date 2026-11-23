@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0d1b3e"><meta name="robots" content="noindex,nofollow"><title>Proven Payments</title>
+<style>body{margin:0;background:#f3f5f8;color:#15213b;font:16px/1.45 system-ui,sans-serif}header{background:#0d1b3e;color:white;padding:22px 18px}main{max-width:540px;margin:auto;padding:18px}.card{background:white;border:1px solid #dce1e8;border-radius:16px;padding:18px;margin:14px 0}label{display:block;font-weight:650;margin:14px 0 4px}input,select,textarea{box-sizing:border-box;width:100%;font:inherit;padding:13px;border:1px solid #bfc8d5;border-radius:10px;background:white}button{border:0;background:#0d1b3e;color:white;padding:15px;border-radius:12px;font:inherit;font-weight:700;width:100%;margin:12px 0}button:disabled{opacity:.45}small,.muted{color:#596477}.error{color:#9e2929}.ok{color:#176744}.hidden{display:none}h1{font-size:22px;margin:0}h2{font-size:19px;margin:0 0 12px}summary{cursor:pointer;font-weight:700}a{color:#a57c24}</style></head>
+<body><header><h1>PROVEN SOLUTIONS · Payments</h1><small style="color:#d7e0f4">Jornadas y pagos de contratistas</small></header><main><p><a href="./">← Portal principal</a></p><p id="status" role="status">Verificando sesión…</p><div id="app" class="hidden">
+<section class="card"><h2>Registrar pago</h2><label>Contratista<select id="worker"></select></label><label>Proyecto<select id="project"></select></label><label>Jornada existente<select id="shift"><option value="">Seleccionar jornada</option></select></label>
+<details id="newShift"><summary>¿No existe? Registrar jornada nueva</summary><label>Fecha trabajada<input id="workDate" type="date"></label><label>Actividad<textarea id="description" rows="2" placeholder="Trabajo realizado"></textarea></label><label>Tarifa aplicada ($)<input id="rate" type="number" min="0" step=".01"></label><label>Modalidad<select id="rateUnit"><option value="day">Por día</option><option value="hour">Por hora</option><option value="job">Por trabajo</option></select></label><label>Cantidad real<input id="units" type="number" min=".01" step=".01" placeholder="Sin asumir jornada completa"></label><p class="muted"><small>La tarifa se aplica solo a esta jornada; no cambia la tarifa habitual. Registrar jornada no significa pagarla.</small></p><button id="createShift" type="button">Guardar jornada</button></details>
+<p id="balance" class="muted">Selecciona una jornada para ver el saldo.</p><label>Importe pagado ($)<input id="amount" type="number" min=".01" step=".01"></label><label>Fecha del pago<input id="paidOn" type="date"></label><label>Método<select id="method"><option value="zelle">Zelle</option><option value="cash">Cash</option><option value="check">Check</option><option value="transfer">Transfer</option><option value="other">Otro</option></select></label><p class="muted"><small>Confirma únicamente pagos ya realizados. Si existe un gasto anterior, concílialo desde Nómina antes de registrar otro pago. No se enviarán correos desde esta pantalla.</small></p><button id="pay" type="button">Confirmar pago realizado</button><p id="message" role="status"></p></section>
+<section class="card"><h2>Pagos recientes</h2><div id="recent"></div></section></div></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"></script><script src="config.js"></script><script>
+(async()=>{
+const $=id=>document.getElementById(id),sb=window.supabase.createClient(PORTAL_CONFIG.SUPABASE_URL,PORTAL_CONFIG.SUPABASE_ANON_KEY);
+const {data:{user},error:authErr}=await sb.auth.getUser();if(authErr||!user){$('status').innerHTML='Inicia sesión en <a href="./">el portal principal</a>.';return}
+const {data:me,error:meErr}=await sb.from('profiles').select('is_admin,is_office,is_finance,status').eq('id',user.id).single();
+if(meErr||!me||me.status!=='approved'||!(me.is_admin||me.is_office||me.is_finance)){$('status').textContent='Acceso administrativo no autorizado.';return}
+const canShift=me.is_admin||me.is_office,canPay=me.is_admin||me.is_finance;
+$('createShift').disabled=!canShift;$('pay').disabled=!canPay;
+if(!canShift)$('newShift').insertAdjacentHTML('beforeend','<p class="error">Tu perfil no tiene permiso de Operaciones para crear jornadas.</p>');
+if(!canPay)$('message').textContent='Tu perfil no tiene permiso de Finanzas para registrar pagos.';
+const load=async(table,columns='*')=>{const {data,error}=await sb.from(table).select(columns);if(error)throw error;return data||[]};
+let workers=[],projects=[],rates=[],shifts=[],payments=[];
+const money=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const option=(select,value,label)=>{const o=document.createElement('option');o.value=value;o.textContent=label;select.append(o)};
+const today=()=>{const d=new Date();return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')};
+$('workDate').value=today();$('paidOn').value=today();
+async function refresh(){
+[workers,projects,rates,shifts,payments]=await Promise.all([load('profiles','id,full_name,grp,status'),load('projects','id,name'),load('worker_rates'),load('labor_shifts'),load('labor_disbursements')]);
+workers=workers.filter(x=>x.grp==='crew'&&x.status==='approved').sort((a,b)=>a.full_name.localeCompare(b.full_name));
+projects.sort((a,b)=>a.name.localeCompare(b.name));shifts.sort((a,b)=>b.work_date.localeCompare(a.work_date));
+const oldWorker=$('worker').value,oldProject=$('project').value,oldShift=$('shift').value;
+$('worker').replaceChildren();$('project').replaceChildren();
+option($('worker'),'','Seleccionar contratista');option($('project'),'','Seleccionar proyecto');
+workers.forEach(w=>option($('worker'),w.id,w.full_name));projects.forEach(p=>option($('project'),p.id,p.name));
+$('worker').value=oldWorker;$('project').value=oldProject;updateShifts(oldShift);renderRecent();
+}
+function updateShifts(preferred=''){
+const w=$('worker').value,p=$('project').value;$('shift').replaceChildren();option($('shift'),'','Seleccionar jornada');
+for(const s of shifts.filter(s=>s.worker_id===w&&s.project_id===p)){const paid=payments.filter(x=>x.labor_shift_id===s.id).reduce((n,x)=>n+Number(x.amount),0),due=Number(s.amount)-paid;if(due>0)option($('shift'),s.id,s.work_date+' · '+money(due)+' pendiente')}
+$('shift').value=preferred;$('balance').textContent=$('shift').value?'Saldo disponible: '+money(outstanding($('shift').value)):'Selecciona una jornada o registra una nueva.';
+}
+function outstanding(id){const s=shifts.find(x=>x.id===id);return s?Number(s.amount)-payments.filter(x=>x.labor_shift_id===id).reduce((n,x)=>n+Number(x.amount),0):0}
+$('worker').onchange=()=>{updateShifts();const r=rates.find(x=>x.worker_id===$('worker').value);$('rate').value=r?.rate_amount??'';$('rateUnit').value=r?.rate_unit||'day'};
+$('project').onchange=()=>updateShifts();$('shift').onchange=()=>updateShifts($('shift').value);
+$('createShift').onclick=async()=>{
+if(!canShift)return;const worker_id=$('worker').value,project_id=$('project').value,work_date=$('workDate').value,rate_amount=Number($('rate').value),units=Number($('units').value);
+if(!worker_id||!project_id||!work_date||!$('rate').value||rate_amount<0||!$('units').value||units<=0){$('message').textContent='Completa trabajador, proyecto, fecha, tarifa y cantidad real.';return}
+if(shifts.some(s=>s.worker_id===worker_id&&s.project_id===project_id&&s.work_date===work_date)){ $('message').textContent='Ya existe una jornada para este trabajador, proyecto y fecha. Revísala antes de crear otra.';return}
+if(!confirm('¿Confirmas esta jornada REAL de '+units+' '+$('rateUnit').value+' a '+money(rate_amount)+'? No se registrará pago todavía.'))return;
+$('createShift').disabled=true;
+try{const {data,error}=await sb.from('labor_shifts').insert({worker_id,project_id,work_date,description:$('description').value.trim(),rate_amount,rate_unit:$('rateUnit').value,units}).select('id').single();if(error)throw error;await refresh();$('worker').value=worker_id;$('project').value=project_id;updateShifts(data.id);$('newShift').open=false;$('message').textContent='Jornada guardada. Ahora puedes registrar el pago si ya se realizó.'}
+catch(e){$('message').textContent='Error guardando jornada: '+e.message}finally{$('createShift').disabled=!canShift}
+};
+$('pay').onclick=async()=>{
+if(!canPay)return;const id=$('shift').value,amt=Number($('amount').value),paid_on=$('paidOn').value;if(!id||!$('amount').value||amt<=0||!paid_on){$('message').textContent='Selecciona jornada, importe y fecha.';return}
+const due=outstanding(id);if(amt>due+0.001){$('message').textContent='El importe supera el saldo pendiente.';return}
+if(!confirm('¿Confirmas que YA pagaste '+money(amt)+' el '+paid_on+' mediante '+$('method').value+'? Esto registrará un gasto y un desembolso real.'))return;
+$('pay').disabled=true;try{const {error}=await sb.rpc('record_labor_payment',{p_shift:id,p_amount:amt,p_paid_on:paid_on,p_method:$('method').value,p_existing_expense:null});if(error)throw error;await refresh();$('message').textContent='Pago registrado. Comprobante en cola interna; el envío por correo aún NO está activo.';$('amount').value=''}catch(e){$('message').textContent='No se pudo registrar el pago: '+e.message+' Si el resultado es incierto, verifica Nómina antes de reintentar.'}finally{$('pay').disabled=!canPay}
+};
+function renderRecent(){const root=$('recent');root.replaceChildren();for(const p of payments.slice().sort((a,b)=>b.created_at.localeCompare(a.created_at)).slice(0,8)){const s=shifts.find(x=>x.id===p.labor_shift_id),w=workers.find(x=>x.id===s?.worker_id);const d=document.createElement('p');d.textContent=p.paid_on+' · '+(w?.full_name||'Contratista')+' · '+money(p.amount)+' · '+p.method;root.append(d)}if(!payments.length)root.textContent='Sin pagos registrados.'}
+await refresh();$('app').classList.remove('hidden');$('status').textContent='Sesión verificada · '+(canShift?'Operaciones':'')+(canPay?' / Finanzas':'');
+})().catch(e=>document.getElementById('status').textContent='Error: '+e.message);
+</script></body></html>
