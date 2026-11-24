@@ -2763,11 +2763,14 @@
        proyecto todavía no tiene fila, la primera llamada se la crea, y la
        segunda ya encuentra dónde anotar la carpeta de Drive. */
     return llamar({ project_id: pr.id })
-      .then(function () {
-        return docId ? llamar({ project_id: pr.id, accion: 'archivar', doc_id: docId }) : null;
-      })
       .catch(function (e) {
-        toast('Quedó guardado, pero el tracker o el Drive no se actualizaron: ' + P.errText(e), true);
+        toast('Documento guardado; Project Tracker pendiente: ' + P.errText(e), true);
+      })
+      .then(function () {
+        return docId ? llamar({ project_id: pr.id, accion: 'archivar', doc_id: docId })
+          .catch(function (e) {
+            toast('Documento guardado; archivo en Drive pendiente: ' + P.errText(e), true);
+          }) : null;
       });
   }
 
