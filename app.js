@@ -1838,6 +1838,36 @@
     draw();
   }
 
+  async function familyBalanceCard(slot) {
+    if (!isFinance() || !API.sb) return;
+    fill(slot, h('div', {class:'card'}, 'Cargando balance familiar…'));
+    try {
+      const result = await API.sb.rpc('family_balance_summary');
+      if (result.error) throw result.error;
+      const v = result.data;
+      const date = h('input', {type:'date', value:dkey(new Date()), required:true});
+      const amount = h('input', {type:'number', min:'0.01', step:'0.01', placeholder:'Importe', required:true});
+      const desc = h('input', {type:'text', placeholder:'Cuenta o concepto', required:true});
+      const kind = h('select', null, h('option',{value:'family_spending'},'Cuenta familiar pagada por Proven'),h('option',{value:'repayment'},'Reintegro a Proven'));
+      const save = h('button',{type:'submit',class:'btn'},'Registrar movimiento');
+      const form = h('form',{class:'card',onsubmit:async(e)=>{
+        e.preventDefault(); if(save.disabled)return; save.disabled=true;
+        try {
+          const res=await API.sb.from('family_cash_movements').insert({spent_on:date.value,amount:Number(amount.value),description:desc.value.trim(),kind:kind.value});
+          if(res.error)throw res.error;
+          toast('Movimiento registrado'); await familyBalanceCard(slot);
+        } catch(err){toast(err.message || 'No se pudo guardar',true);save.disabled=false;}
+      }},h('label',null,'Fecha',date),h('label',null,'Tipo',kind),h('label',null,'Importe',amount),h('label',null,'Concepto',desc),save);
+      fill(slot,h('div',{class:'card'},h('h3',null,'Balance familiar · Miguel, Ana y Juliana'),
+        h('div',{class:'stats'},
+          h('div',{class:'stat'},h('span',null,'Remuneración registrada'),h('b',null,money(v.earned))),
+          h('div',{class:'stat'},h('span',null,'Gastos familiares registrados'),h('b',null,money(v.recorded_spending))),
+          h('div',{class:'stat'},h('span',null,'Reintegros registrados'),h('b',null,money(v.recorded_repayments)))),
+        h('p',{class:'mut'},'Saldo real y adelantos: pendientes de conciliación histórica. Los importes registrados no representan el saldo disponible. No registrar nuevamente remuneraciones ni gastos ya contabilizados.'),
+        form));
+    } catch(err){fill(slot,h('div',{class:'card'},'Balance familiar no disponible: '+(err.message || 'error de consulta')));}
+  }
+
   async function viewFinance(main) {
     const [a, b] = fRange(); const bEnd = addDays(b, -1);
     const [exp, rec, pays, projects] = await Promise.all([
@@ -1892,6 +1922,7 @@
         psel,
         h('button', { class: 'btn ghost sm', type: 'button', onclick: () => exportQB(rows, pm) }, ico('down', 16), t('export_qb'))),
       h('div', { id: 'incomeslot' }),
+      isFinance() ? h('div', { id: 'familyslot' }) : null,
       h('div', { class: 'stats' },
         h('div', { class: 'stat' }, h('span', null, t('fin_total')), h('b', null, money(tot)), h('small', null, t('only_out'))),
         h('div', { class: 'stat' }, h('span', null, t('fin_expenses')), h('b', null, money(tEx))),
@@ -1917,6 +1948,7 @@
     const fs = main.querySelector('#fixedslot'); if (fs) fixedCosts(fs, a, exp);
     const inc = main.querySelector('#incomeslot'); if (inc) incomeCard(inc, a, b, pm);
     const dbt = main.querySelector('#debtslot'); if (dbt) debtCard(dbt);
+    const family = main.querySelector('#familyslot'); if (family) familyBalanceCard(family);
   }
 
   /* ---------- gastos fijos: lo que se paga pase lo que pase ---------- */
