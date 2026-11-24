@@ -1868,6 +1868,24 @@
     } catch(err){fill(slot,h('div',{class:'card'},'Balance familiar no disponible: '+(err.message || 'error de consulta')));}
   }
 
+  async function payrollMobileCard(slot, projects) {
+    if (!isFinance() || !API.sb) return;
+    try {
+      const [pr,rr,sr,dr]=await Promise.all([API.sb.from('profiles').select('id,full_name,compensation_class').eq('status','approved').eq('is_client',false),API.sb.from('worker_rates').select('*'),API.sb.from('labor_shifts').select('*').order('work_date',{ascending:false}).limit(100),API.sb.from('labor_disbursements').select('labor_shift_id,amount')]);
+      for(const x of [pr,rr,sr,dr]) if(x.error)throw x.error;
+      const names=Object.fromEntries(pr.data.map(p=>[p.id,p])); const rates=Object.fromEntries(rr.data.map(r=>[r.worker_id,r])); const paid={}; dr.data.forEach(d=>paid[d.labor_shift_id]=(paid[d.labor_shift_id]||0)+Number(d.amount));
+      const worker=h('select',{required:true},h('option',{value:''},'Trabajador'),pr.data.filter(p=>rates[p.id]).map(p=>h('option',{value:p.id},p.full_name)));
+      const project=h('select',{required:true},h('option',{value:''},'Proyecto'),projects.map(p=>h('option',{value:p.id},p.name)));
+      const date=h('input',{type:'date',value:dkey(new Date()),required:true}); const unit=h('select',null,h('option',{value:'day'},'Día'),h('option',{value:'hour'},'Hora'),h('option',{value:'job'},'Trabajo'));
+      const units=h('input',{type:'number',min:'0.01',step:'0.01',value:'1',required:true}); const desc=h('input',{placeholder:'Actividad'}); const rate=h('p',{class:'mut'},'Selecciona trabajador');
+      const preview=()=>{const r=rates[worker.value];rate.textContent=r?'Tarifa oficial: '+money(r.rate_amount)+' / '+r.rate_unit:'Selecciona trabajador';}; worker.addEventListener('change',preview);
+      const save=h('button',{class:'btn',type:'submit'},'Guardar jornada');
+      const form=h('form',{onsubmit:async e=>{e.preventDefault();if(save.disabled)return;save.disabled=true;try{const x=await API.sb.rpc('register_official_labor_shift',{p_project:project.value,p_worker:worker.value,p_date:date.value,p_units:Number(units.value),p_unit:unit.value,p_description:desc.value});if(x.error)throw x.error;toast('Jornada registrada');refresh();}catch(err){toast(err.message,true);save.disabled=false;}}},h('label',null,'Trabajador',worker),rate,h('label',null,'Proyecto',project),h('label',null,'Fecha',date),h('label',null,'Unidad',unit),h('label',null,'Cantidad',units),h('label',null,'Actividad',desc),save);
+      const rows=sr.data.map(s=>{const due=Math.round((Number(s.amount)-(paid[s.id]||0))*100)/100;const p=names[s.worker_id];const method=h('select',null,h('option',{value:'cash'},'Cash'),h('option',{value:'zelle'},'Zelle'),h('option',{value:'check'},'Cheque'),h('option',{value:'transfer'},'Transferencia'));const pd=h('input',{type:'date',value:dkey(new Date()),required:true});const amt=h('input',{type:'number',min:'0.01',max:String(due),step:'0.01',value:String(due),required:true});const btn=h('button',{class:'btn sm',type:'submit'},'Registrar pago realizado');return h('div',{class:'card'},h('b',null,(p?p.full_name:'Trabajador')+' · '+money(s.amount)),h('p',{class:'mut'},s.work_date+' · '+(projects.find(j=>j.id===s.project_id)||{}).name+' · Saldo '+money(due)),due>0&&p&&p.compensation_class==='external'?h('form',{onsubmit:async e=>{e.preventDefault();if(btn.disabled)return;if(!await askConfirm('¿Confirmas que este pago ya se realizó y no está registrado como gasto?'))return;btn.disabled=true;try{const x=await API.sb.rpc('record_labor_payment',{p_shift:s.id,p_amount:Number(amt.value),p_paid_on:pd.value,p_method:method.value});if(x.error)throw x.error;toast('Pago registrado');refresh();}catch(err){toast(err.message,true);btn.disabled=false;}}},h('label',null,'Fecha de pago',pd),h('label',null,'Importe',amt),h('label',null,'Método',method),btn):due>0?h('p',{class:'mut'},'Remuneración interna: consultar balance familiar.'):null);});
+      fill(slot,h('div',{class:'card'},h('h3',null,'Nómina · Registro móvil'),form,h('h3',null,'Últimas jornadas'),rows));
+    }catch(err){fill(slot,h('div',{class:'card'},'Nómina no disponible: '+err.message));}
+  }
+
   async function viewFinance(main) {
     const [a, b] = fRange(); const bEnd = addDays(b, -1);
     const [exp, rec, pays, projects] = await Promise.all([
@@ -1923,6 +1941,7 @@
         h('button', { class: 'btn ghost sm', type: 'button', onclick: () => exportQB(rows, pm) }, ico('down', 16), t('export_qb'))),
       h('div', { id: 'incomeslot' }),
       isFinance() ? h('div', { id: 'familyslot' }) : null,
+      isFinance() ? h('div', { id: 'payrollslot' }) : null,
       h('div', { class: 'stats' },
         h('div', { class: 'stat' }, h('span', null, t('fin_total')), h('b', null, money(tot)), h('small', null, t('only_out'))),
         h('div', { class: 'stat' }, h('span', null, t('fin_expenses')), h('b', null, money(tEx))),
@@ -1949,6 +1968,7 @@
     const inc = main.querySelector('#incomeslot'); if (inc) incomeCard(inc, a, b, pm);
     const dbt = main.querySelector('#debtslot'); if (dbt) debtCard(dbt);
     const family = main.querySelector('#familyslot'); if (family) familyBalanceCard(family);
+    const payroll = main.querySelector('#payrollslot'); if (payroll) payrollMobileCard(payroll, projects);
   }
 
   /* ---------- gastos fijos: lo que se paga pase lo que pase ---------- */
