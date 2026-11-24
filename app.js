@@ -1886,6 +1886,18 @@
     }catch(err){fill(slot,h('div',{class:'card'},'Nómina no disponible: '+err.message));}
   }
 
+  async function trackerReconciliationCard(slot, projects) {
+    if (!isFinance() || !API.sb) return;
+    try {
+      const r=await API.sb.from('tracker_reconciliation').select('*').order('source_row');
+      if(r.error)throw r.error;
+      const rows=r.data||[];
+      const pending=rows.filter(x=>x.status!=='resolved');
+      const total=pending.reduce((n,x)=>n+Number(x.tracker_paid)-Number(x.supabase_paid),0);
+      fill(slot,h('div',{class:'card'},h('h3',null,'Conciliación histórica · Project Tracker'),h('b',null,money(total)+' por verificar'),h('p',{class:'mut'},'Comparación histórica; no constituye efectivo disponible ni cobros nuevos. No se incluye en los balances definitivos.'),rows.map(x=>h('div',{class:'lrow slim'},h('div',null,h('b',null,(projects.find(p=>p.id===x.project_id)||{}).name||x.project_id),h('small',null,'Fila '+x.source_row+' · '+x.observed_on+' · '+x.status+' · '+x.notes)),h('div',null,h('b',null,money(x.tracker_paid)),h('small',null,'Supabase: '+money(x.supabase_paid)))))));
+    }catch(e){fill(slot,h('div',{class:'card'},'Conciliación no disponible: '+e.message));}
+  }
+
   async function viewFinance(main) {
     const [a, b] = fRange(); const bEnd = addDays(b, -1);
     const [exp, rec, pays, projects] = await Promise.all([
@@ -1942,6 +1954,7 @@
       h('div', { id: 'incomeslot' }),
       isFinance() ? h('div', { id: 'familyslot' }) : null,
       isFinance() ? h('div', { id: 'payrollslot' }) : null,
+      isFinance() ? h('div', { id: 'reconcileslot' }) : null,
       h('div', { class: 'stats' },
         h('div', { class: 'stat' }, h('span', null, t('fin_total')), h('b', null, money(tot)), h('small', null, t('only_out'))),
         h('div', { class: 'stat' }, h('span', null, t('fin_expenses')), h('b', null, money(tEx))),
@@ -1969,6 +1982,7 @@
     const dbt = main.querySelector('#debtslot'); if (dbt) debtCard(dbt);
     const family = main.querySelector('#familyslot'); if (family) familyBalanceCard(family);
     const payroll = main.querySelector('#payrollslot'); if (payroll) payrollMobileCard(payroll, projects);
+    const reconciliation=main.querySelector('#reconcileslot'); if(reconciliation) trackerReconciliationCard(reconciliation,projects);
   }
 
   /* ---------- gastos fijos: lo que se paga pase lo que pase ---------- */
