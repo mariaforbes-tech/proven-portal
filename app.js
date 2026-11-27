@@ -304,18 +304,58 @@
   /* ============================ PROYECTOS ============================ */
   const weekKey = (d) => 'W' + dkey(weekStart(d));
   const daysBetween = (a, b) => Math.round((startOfDay(b) - startOfDay(a)) / 864e5);
-  const onceItems = (items) => items.filter((s) => s.cadence === 'once' && (s.kind || 'phase') === 'phase');
+  const pointItems = (items) => items.filter(s => String(s.notes || '').startsWith('POINTS_V1|'));
+  const pointData = s => { try { return JSON.parse(String(s.notes).slice('POINTS_V1|'.length)); } catch(e) { return {}; } };
+  const onceItems = (items) => {
+    const pointRows = pointItems(items);
+    if (pointRows.length) return pointRows;
+    return items.filter(s => s.cadence === 'once' && (s.kind || 'phase') === 'phase');
+  };
   const todoItems = (items) => items.filter((s) => (s.kind || 'phase') === 'todo');
 
   function scopeStats(items, project) {
-    const once = onceItems(items);
-    if (!once.length && project && project.pct_manual != null) {
-      /* Sin scope cargado: se usa el avance que viene del tracker, y se dice de dónde salió. */
-      return { pct: Number(project.pct_manual) || 0, done: 0, total: 0, has: false, manual: true };
+    const pts = pointItems(items);
+    if (pts.length) {
+      const all = pts.reduce((z,x) => z+Number(x.weight||0),0);
+      const done = pts.reduce((z,x) => z+Number(pointData(x).earned||0),0);
+      return {pct:all?Math.round(100*done/all):0,done:pts.filter(x=>Number(pointData(x).earned||0)>=Number(x.weight||0)).length,
+        total:pts.length,has:true,manual:false,points:done,totalPoints:all,provisional:true};
     }
-    const tot = once.reduce((s, x) => s + Number(x.weight || 1), 0);
-    const dn = once.filter((x) => x.status === 'done').reduce((s, x) => s + Number(x.weight || 1), 0);
-    return { pct: tot ? Math.round((dn / tot) * 100) : 0, done: once.filter((x) => x.status === 'done').length, total: once.length, has: once.length > 0, manual: false };
+    const once=onceItems(items);
+    if(!once.length && project && project.pct_manual!=null)
+      return {pct:Number(project.pct_manual)||0,done:0,total:0,has:false,manual:true};
+    const tot=once.reduce((z,x)=>z+Number(x.weight||1),0);
+    const dn=once.filter(x=>x.status==='done').reduce((z,x)=>z+Number(x.weight||1),0);
+    return {pct:tot?Math.round(dn*100/tot):0,done:once.filter(x=>x.status==='done').length,
+      total:once.length,has:once.length>0,manual:false};
+  }
+  function pointAdminPane(items) {
+    const pts=pointItems(items).sort((a,b)=>Number(a.sort||0)-Number(b.sort||0));
+    if(!pts.length)return null;
+    return h('div',{class:'card'},
+      h('h3',null,'Puntos internos D37 · ponderación provisional'),
+      h('p',{class:'mut small'},'La clienta solo ve porcentajes. Actualizar los puntos de una subpartida exige revisar la evidencia y conciliar su total con el paquete. No sumar dos veces compras/instalaciones.'),
+      pts.map(x=>{
+        const m=pointData(x), earned=Number(m.earned||0), total=Number(x.weight||0);
+        return h('details',{style:'border-top:1px solid #e5e7eb;padding:10px 0'},
+          h('summary',null,h('b',null,x.title.replace(/^D37PM\s*\|\s*/,'')),
+            h('span',{style:'margin-left:10px'},earned+' / '+total+' pts · '+(total?Math.round(earned*100/total):0)+'%')),
+          (m.subscopes||[]).map(a=>h('div',{style:'display:flex;justify-content:space-between;gap:8px;padding:4px 8px'},
+            h('span',null,a.title),h('b',null,a.earned+' / '+a.points))));
+      }));
+  }
+  function dayAdminPane(items) {
+    const days=items.filter(x=>String(x.notes||'').startsWith('SCHEDULE_V1|')).sort((a,b)=>String(a.starts_on).localeCompare(String(b.starts_on)));
+    if(!days.length)return null;
+    return h('div',{class:'card'},h('h3',null,'Plan diario de obra · 30 nov–18 dic'),
+      h('p',{class:'mut small'},'Fechas de trabajo propuestas hasta confirmar responsables, entregas, permisos y tiempos de secado. La limpieza del 17 y entrega objetivo del 18 están priorizadas.'),
+      days.map(x=>{
+        let d={};try{d=JSON.parse(String(x.notes).slice('SCHEDULE_V1|'.length));}catch(e){}
+        return h('details',{style:'border-top:1px solid #e5e7eb;padding:8px 0'},
+          h('summary',null,h('b',null,x.starts_on),h('span',{style:'margin-left:8px'},d.certainty==='proposed'?'Propuesto':'Día objetivo')),
+          h('p',null,d.tasks||''),h('p',{class:'mut small'},'Equipo: '+(d.owner||'')),
+          h('p',{class:'mut small'},'Dependencias: '+(d.dependency||'')));
+      }));
   }
   /* Compara lo hecho contra lo gastado: a mitad de obra eso sí dice la verdad. */
   function health(project, pct, spent, hasCosts) {
@@ -727,9 +767,11 @@
           isStaff() ? h('button', { class: 'ib', type: 'button', 'aria-label': t('edit'), onclick: () => taskEditor(s, pid, () => scopePane(box, p, names, myRole, go)) }, ico('edit', 15)) : null));
     };
 
-    fill(box, 
+    fill(box,
+      pointAdminPane(items),
+      dayAdminPane(items),
       h('div', { class: 'card where' }, ring(st.pct, 72),
-        h('div', null, h('h3', null, t('scope_where')), h('p', { class: 'mut' }, st.has ? t('of_scope', { a: st.done, b: st.total }) : st.manual ? t('from_tracker') : t('no_scope')))),
+        h('div', null, h('h3', null, t('scope_where')), h('p', { class: 'mut' }, st.points != null ? st.points + ' / ' + st.totalPoints + ' puntos internos · modelo provisional' : st.has ? t('of_scope', { a: st.done, b: st.total }) : st.manual ? t('from_tracker') : t('no_scope')))),
       banners.length ? h('div', { class: 'bans' }, banners.map(([k, txt]) => h('div', { class: 'ban ' + k }, k === 'won' ? ico('check', 20) : ico('clock', 20), h('b', null, txt)))) : null,
       h('div', { class: 'sech', style: 'margin-top:4px' }, h('h3', { class: 'sub', style: 'margin:0' }, t('daily_check'), ' ', chip(String(tHoy.length), tHoy.length ? 'warn' : 'ok')),
         isStaff() ? h('button', { class: 'lnk', type: 'button', onclick: () => taskEditor(null, pid, () => scopePane(box, p, names, myRole, go), 'todo') }, t('add_todo')) : null),
