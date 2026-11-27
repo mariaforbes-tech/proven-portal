@@ -793,7 +793,9 @@
       isViewer() ? h('div', { id: 'healthslot' }) : null);
     /* La plata solo la ve quien la tiene que ver */
     const hs = box.querySelector('#healthslot');
-    if (hs) fillHealth(hs, p, st.pct);
+    if (hs && !st.provisional) fillHealth(hs, p, st.pct);
+    else if (hs && st.provisional) fill(hs, h('div', {class:'card'},h('p',{class:'mut small'},
+      'El avance por puntos es operativo y provisional; no representa porcentaje facturable, ingresos devengados ni margen del proyecto.')));
   }
   async function fillHealth(slot, p, pct) {
     if (!p.contract) { fill(slot, isStaff() ? h('p', { class: 'mut small' }, t('set_contract')) : null); return; }
