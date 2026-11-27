@@ -311,7 +311,7 @@
     if (pointRows.length) return pointRows;
     return items.filter(s => s.cadence === 'once' && (s.kind || 'phase') === 'phase');
   };
-  const todoItems = (items) => items.filter((s) => (s.kind || 'phase') === 'todo');
+  const todoItems = (items) => items.filter(s => (s.kind || 'phase') === 'todo' && !String(s.notes || '').startsWith('POINTS_V1|'));
 
   function scopeStats(items, project) {
     const pts = pointItems(items);
@@ -744,7 +744,7 @@
     const taskRow = (s) => {
       const late = s.status !== 'done' && s.due_on && daysBetween(today, new Date(s.due_on + 'T12:00:00')) < 0;
       const acts = [];
-      if (canMove) {
+      if (canMove && !String(s.notes || '').startsWith('POINTS_V1|')) {
         if (s.status === 'pending' || s.status === 'blocked') acts.push(['active', t('start_task'), '']);
         if (s.status === 'active') acts.push(['done', t('finish_task'), ''], ['blocked', t('mark_blocked'), 'ghost']);
         if (s.status === 'done') acts.push(['active', t('reopen_task'), 'ghost']);
